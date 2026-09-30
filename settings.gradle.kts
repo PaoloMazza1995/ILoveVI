@@ -1,6 +1,7 @@
 rootProject.name = "ILoveVI"
 
 pluginManagement {
+    includeBuild("build_logic")
     repositories {
         google {
             mavenContent {
