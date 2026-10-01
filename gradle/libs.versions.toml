@@ -1,11 +1,11 @@
 [versions]
-agp = "9.1.1"
+agp = "9.4.1"
 android-compileSdk = "37"
 android-minSdk = "24"
 android-targetSdk = "37"
 androidx-activity = "1.13.0"
 androidx-appcompat = "1.8.0"
-androidx-core = "1.19.0"
+androidx-core = "1.19.1"
 androidx-espresso = "3.7.0"
 androidx-lifecycle = "2.11.0"
 androidx-testExt = "1.3.0"
@@ -15,10 +15,10 @@ kotlin = "2.4.20"
 kotlin-wrappers = "2026.9.2"
 material3 = "1.12.0-alpha03"
 
-kotlin-stdlib = "2.2.20"
-kotlinx-collections-immutable-version = "0.4.0"
+kotlin-stdlib = "2.4.20"
+kotlinx-collections-immutable-version = "0.5.2"
 
-gradle = "8.8.2"
+gradle = "9.4.1"
 ksp = "2.2.20-2.0.4"
 
 [libraries]
