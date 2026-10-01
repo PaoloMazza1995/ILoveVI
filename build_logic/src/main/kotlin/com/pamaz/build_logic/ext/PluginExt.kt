@@ -1,5 +1,6 @@
 package com.pamaz.build_logic.ext
 
+import com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryTarget
 import com.android.build.gradle.BaseExtension
 import com.google.devtools.ksp.gradle.KspExtension
 import org.gradle.api.Project
@@ -15,6 +16,9 @@ internal val Project.android: BaseExtension
 internal val Project.kotlin: KotlinMultiplatformExtension
     get() = extensions.findByName("kotlin") as? KotlinMultiplatformExtension
         ?: error("This is not a Kotlin Multiplatform module!")
+
+internal val KotlinMultiplatformExtension.androidLibrary: KotlinMultiplatformAndroidLibraryTarget
+    get() = extensions.getByType()
 
 internal val Project.library: VersionCatalog
     get() {

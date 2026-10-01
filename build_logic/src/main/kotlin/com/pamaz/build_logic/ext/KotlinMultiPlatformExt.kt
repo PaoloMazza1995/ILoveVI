@@ -3,7 +3,7 @@ package com.pamaz.build_logic.ext
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 
-internal fun KotlinMultiplatformExtension.configurePlatformTargets() {
+internal fun KotlinMultiplatformExtension.configurePlatformTargets(includeAndroidTarget: Boolean = true) {
 
     jvm{
         compilerOptions{
@@ -12,7 +12,6 @@ internal fun KotlinMultiplatformExtension.configurePlatformTargets() {
     }
 
     listOf(
-        iosX64(),
         iosArm64(),
         iosSimulatorArm64(),
     ).forEach { iosTarget ->
@@ -22,11 +21,13 @@ internal fun KotlinMultiplatformExtension.configurePlatformTargets() {
         }
     }
 
-    androidTarget {
-        compilations.all {
-            compileTaskProvider.configure {
-                compilerOptions {
-                    jvmTarget.set(JvmTarget.JVM_17)
+    if (includeAndroidTarget) {
+        androidTarget {
+            compilations.all {
+                compileTaskProvider.configure {
+                    compilerOptions {
+                        jvmTarget.set(JvmTarget.JVM_17)
+                    }
                 }
             }
         }

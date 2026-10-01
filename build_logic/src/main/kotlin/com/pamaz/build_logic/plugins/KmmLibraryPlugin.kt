@@ -1,12 +1,10 @@
 package com.pamaz.build_logic.plugins
 
-import com.pamaz.build_logic.ext.android
+import com.pamaz.build_logic.ext.androidLibrary
 import com.pamaz.build_logic.ext.appCompileSdkVersion
+import com.pamaz.build_logic.ext.appMinSdkVersion
 import com.pamaz.build_logic.ext.appNamespace
-import com.pamaz.build_logic.ext.configureCompileOptions
-import com.pamaz.build_logic.ext.configureDefaultConfig
 import com.pamaz.build_logic.ext.configurePlatformTargets
-import com.pamaz.build_logic.ext.configureTestOptions
 import com.pamaz.build_logic.ext.kotlin
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -20,17 +18,15 @@ class KmmLibraryPlugin : Plugin<Project>{
         with(target){
             plugins.apply {
                 apply("org.jetbrains.kotlin.multiplatform")
-                apply("com.android.library")
-            }
-            android.apply {
-                compileSdkVersion(target.appCompileSdkVersion)
-                namespace = target.appNamespace.plus(target.name)
-                configureDefaultConfig(target)
-                configureCompileOptions()
-                configureTestOptions()
+                apply("com.android.kotlin.multiplatform.library")
             }
             kotlin.apply {
-                configurePlatformTargets()
+                configurePlatformTargets(includeAndroidTarget = false)
+                androidLibrary.apply {
+                    namespace = target.appNamespace.plus(target.name)
+                    compileSdk = target.appCompileSdkVersion
+                    minSdk = target.appMinSdkVersion
+                }
             }
         }
     }
