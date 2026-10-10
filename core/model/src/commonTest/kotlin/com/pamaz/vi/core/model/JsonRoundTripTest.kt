@@ -1,14 +1,25 @@
 package com.pamaz.vi.core.model
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.time.Instant
 
 /** JSON round trip for every model in this module, via kotlinx.serialization. */
 class JsonRoundTripTest {
     private val json = Json
-    private val now = kotlin.time.Instant.parse("2026-01-01T00:00:00Z")
+    private val now = Instant.parse("2026-01-01T00:00:00Z")
+
+    /** [kotlin.time.Instant] itself round trips through the kotlinx-serialization version in the catalog. */
+    @Test
+    fun instantRoundTrips() {
+        val encoded = json.encodeToString(now)
+        assertEquals("\"2026-01-01T00:00:00Z\"", encoded)
+        assertEquals(now, json.decodeFromString<Instant>(encoded))
+    }
 
     private inline fun <reified T> assertRoundTrips(value: T) {
         val encoded = json.encodeToString(value)
@@ -130,15 +141,16 @@ class JsonRoundTripTest {
 
     @Test
     fun mapPinRoundTrips_weaponRef() {
-        assertRoundTrips(
-            MapPin(
-                id = MapPinId("pin1"),
-                entryRef = EntryRef.ToWeapon(WeaponId("w1")),
-                position = NormalizedPoint(0.5f, 0.5f),
-                zone = "Vinewood",
-                updatedAt = now,
-            ),
+        val pin = MapPin(
+            id = MapPinId("pin1"),
+            entryRef = EntryRef.ToWeapon(WeaponId("w1")),
+            position = NormalizedPoint(0.5f, 0.5f),
+            zone = "Vinewood",
+            mapVersion = 3,
+            updatedAt = now,
         )
+        assertRoundTrips(pin)
+        assertEquals(3, json.decodeFromString<MapPin>(json.encodeToString(pin)).mapVersion)
     }
 
     @Test
@@ -148,6 +160,7 @@ class JsonRoundTripTest {
                 id = MapPinId("pin2"),
                 entryRef = EntryRef.ToVehicle(VehicleId("v1")),
                 position = NormalizedPoint(0.1f, 0.9f),
+                mapVersion = 1,
                 updatedAt = now,
             ),
         )
@@ -160,6 +173,42 @@ class JsonRoundTripTest {
                 id = MapPinId("pin3"),
                 entryRef = EntryRef.ToItem(ItemId("i1")),
                 position = NormalizedPoint(0f, 1f),
+                mapVersion = 1,
+                updatedAt = now,
+            ),
+        )
+    }
+
+    /** [EntryRef]'s discriminator is a stable [kotlinx.serialization.SerialName], not the class's name/package. */
+    private fun entryRefDiscriminator(ref: EntryRef): String =
+        json.parseToJsonElement(json.encodeToString(ref)).jsonObject.getValue("type").jsonPrimitive.content
+
+    @Test
+    fun entryRefDiscriminator_weaponIsStable() {
+        assertEquals("weapon", entryRefDiscriminator(EntryRef.ToWeapon(WeaponId("w1"))))
+    }
+
+    @Test
+    fun entryRefDiscriminator_vehicleIsStable() {
+        assertEquals("vehicle", entryRefDiscriminator(EntryRef.ToVehicle(VehicleId("v1"))))
+    }
+
+    @Test
+    fun entryRefDiscriminator_itemIsStable() {
+        assertEquals("item", entryRefDiscriminator(EntryRef.ToItem(ItemId("i1"))))
+    }
+
+    @Test
+    fun mapConfigRoundTrips() {
+        assertRoundTrips(
+            MapConfig(
+                mapVersion = 3,
+                sourceImageUrl = "https://example.com/map-v3.png",
+                widthPx = 4096,
+                heightPx = 2048,
+                tileUrlTemplate = "https://example.com/tiles/{z}/{x}/{y}.png",
+                minZoom = 0,
+                maxZoom = 5,
                 updatedAt = now,
             ),
         )

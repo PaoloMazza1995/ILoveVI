@@ -2,6 +2,7 @@ package com.pamaz.vi.core.model
 
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
+import kotlin.time.Instant
 
 /** Typed id of a [Station]. Serializes as a plain JSON string, not as an object. */
 @JvmInline
@@ -15,5 +16,5 @@ data class Station(
     /** Station name, as written in the game: not translated in this model. */
     val name: String,
     /** Last time this station's data changed, used for delta sync. */
-    val updatedAt: kotlin.time.Instant,
+    val updatedAt: Instant,
 )

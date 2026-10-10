@@ -2,6 +2,7 @@ package com.pamaz.vi.core.model
 
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
+import kotlin.time.Instant
 
 /** Typed id of a [Song]. Serializes as a plain JSON string, not as an object. */
 @JvmInline
@@ -23,5 +24,5 @@ data class Song(
     /** Cached id of the matched Spotify track, when a match has been found. */
     val spotifyTrackId: String? = null,
     /** Last time this song's data changed, used for delta sync. */
-    val updatedAt: kotlin.time.Instant,
+    val updatedAt: Instant,
 )

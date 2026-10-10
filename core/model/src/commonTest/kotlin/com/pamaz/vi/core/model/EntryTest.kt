@@ -2,9 +2,10 @@ package com.pamaz.vi.core.model
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.time.Instant
 
 class EntryTest {
-    private val now = kotlin.time.Instant.parse("2026-01-01T00:00:00Z")
+    private val now = Instant.parse("2026-01-01T00:00:00Z")
 
     @Test
     fun weaponExposesWeaponCategoryAndStringEntryId() {
@@ -17,6 +18,7 @@ class EntryTest {
         )
         assertEquals(EntryCategory.WEAPON, entry.category)
         assertEquals("w1", entry.entryId)
+        assertEquals("A handgun.", entry.description)
     }
 
     @Test
@@ -30,6 +32,7 @@ class EntryTest {
         )
         assertEquals(EntryCategory.VEHICLE, entry.category)
         assertEquals("v1", entry.entryId)
+        assertEquals("A city car.", entry.description)
     }
 
     @Test
@@ -43,5 +46,6 @@ class EntryTest {
         )
         assertEquals(EntryCategory.ITEM, entry.category)
         assertEquals("i1", entry.entryId)
+        assertEquals("Restores health.", entry.description)
     }
 }

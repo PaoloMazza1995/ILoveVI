@@ -1,7 +1,9 @@
 package com.pamaz.vi.core.model
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
+import kotlin.time.Instant
 
 /** Typed id of a [MapPin]. Serializes as a plain JSON string, not as an object. */
 @JvmInline
@@ -16,6 +18,10 @@ value class MapPinId(val value: String)
  * [VehicleId]): the compiler enforces the pairing by construction, and [category] is derived
  * from the branch instead of being a second, independently-settable field that could drift out
  * of sync with the id it's supposed to describe.
+ *
+ * Each branch has a stable [SerialName] ("weapon"/"vehicle"/"item") so the JSON discriminator
+ * doesn't depend on the class's name or package: renaming or moving `ToWeapon` etc. won't
+ * silently change already-stored/transmitted JSON.
  */
 @Serializable
 sealed interface EntryRef {
@@ -24,18 +30,21 @@ sealed interface EntryRef {
 
     /** Points at a [Weapon]. */
     @Serializable
+    @SerialName("weapon")
     data class ToWeapon(val id: WeaponId) : EntryRef {
         override val category: EntryCategory get() = EntryCategory.WEAPON
     }
 
     /** Points at a [Vehicle]. */
     @Serializable
+    @SerialName("vehicle")
     data class ToVehicle(val id: VehicleId) : EntryRef {
         override val category: EntryCategory get() = EntryCategory.VEHICLE
     }
 
     /** Points at an [Item]. */
     @Serializable
+    @SerialName("item")
     data class ToItem(val id: ItemId) : EntryRef {
         override val category: EntryCategory get() = EntryCategory.ITEM
     }
@@ -56,8 +65,10 @@ data class MapPin(
     val position: NormalizedPoint,
     /** In-game area/location name, when known. */
     val zone: String? = null,
+    /** The [MapConfig.mapVersion] this pin's [position] was placed on, used to flag pins that need repositioning when the map image changes. */
+    val mapVersion: Int,
     /** Last time this pin's data changed, used for delta sync. */
-    val updatedAt: kotlin.time.Instant,
+    val updatedAt: Instant,
 ) {
     /** Forwards [EntryRef.category], so callers don't need to branch on [entryRef] just for this. */
     val category: EntryCategory get() = entryRef.category

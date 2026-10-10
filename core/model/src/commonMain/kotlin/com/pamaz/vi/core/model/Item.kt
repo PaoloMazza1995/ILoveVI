@@ -2,6 +2,7 @@ package com.pamaz.vi.core.model
 
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
+import kotlin.time.Instant
 
 /** Typed id of an [Item]. Serializes as a plain JSON string, not as an object. */
 @JvmInline
@@ -23,13 +24,13 @@ data class Item(
     val id: ItemId,
     override val name: String,
     /** Flavor/description text, as written in the game: not translated in this model. */
-    val description: String,
+    override val description: String,
     val subType: ItemType,
     override val zone: String? = null,
     override val imageUrl: String? = null,
     /** Free-form extra key/value pairs (e.g. "heal amount") not worth their own field yet. */
     val attributes: Map<String, String> = emptyMap(),
-    override val updatedAt: kotlin.time.Instant,
+    override val updatedAt: Instant,
 ) : Entry {
     override val entryId: String get() = id.value
     override val category: EntryCategory get() = EntryCategory.ITEM

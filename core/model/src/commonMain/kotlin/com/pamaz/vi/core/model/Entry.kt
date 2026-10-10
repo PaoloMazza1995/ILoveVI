@@ -1,5 +1,7 @@
 package com.pamaz.vi.core.model
 
+import kotlin.time.Instant
+
 /**
  * Read-only, uniform view shared by [Weapon], [Vehicle] and [Item], so catalog/detail screens
  * can iterate over the three content types without branching on their concrete class. The three
@@ -18,6 +20,9 @@ sealed interface Entry {
     /** Content name, as written in the game: not translated in this model. */
     val name: String
 
+    /** Flavor/description text, as written in the game: not translated in this model. */
+    val description: String
+
     /** Which of the three map/catalog categories this entry belongs to. */
     val category: EntryCategory
 
@@ -28,5 +33,5 @@ sealed interface Entry {
     val imageUrl: String?
 
     /** Last time this entry's data changed, used for delta sync. */
-    val updatedAt: kotlin.time.Instant
+    val updatedAt: Instant
 }

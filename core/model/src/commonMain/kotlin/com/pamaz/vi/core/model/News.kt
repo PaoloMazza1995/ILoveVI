@@ -2,6 +2,7 @@ package com.pamaz.vi.core.model
 
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
+import kotlin.time.Instant
 
 /** Which section of the News destination an item belongs to (functional analysis v0.2). */
 @Serializable
@@ -22,7 +23,7 @@ data class FeedSource(
     /** Whether this feed is currently polled. Defaults to on for a newly added source. */
     val enabled: Boolean = true,
     /** Last time this feed's data changed, used for delta sync. */
-    val updatedAt: kotlin.time.Instant,
+    val updatedAt: Instant,
 )
 
 /** Typed id of a [NewsItem]. Serializes as a plain JSON string, not as an object. */
@@ -43,11 +44,11 @@ data class NewsItem(
     val title: String,
     /** The original article's URL. */
     val link: String,
-    val publishedAt: kotlin.time.Instant,
+    val publishedAt: Instant,
     /** Short teaser, never the full article body. */
     val excerpt: String? = null,
     val imageUrl: String? = null,
     val topic: NewsTopic,
     /** When this app's cache last fetched the item — bookkeeping for delta sync, distinct from [publishedAt]. */
-    val fetchedAt: kotlin.time.Instant,
+    val fetchedAt: Instant,
 )
