@@ -15,7 +15,7 @@ kotlin {
             implementation(libs.compose.animation)
             implementation(libs.compose.ui.util)
             implementation(libs.compose.components.resources)
-            implementation(libs.compose.components.uiToolingPreview)
+            implementation(libs.compose.uiToolingPreview)
 
             implementation(libs.navigation.compose)
             implementation(libs.ktor.serialization.kotlinx.json)
@@ -28,6 +28,7 @@ kotlin {
 
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
+            implementation(libs.compose.uiTooling)
         }
 
         iosMain.dependencies {
@@ -41,6 +42,10 @@ kotlin {
             exclude(group = "io.coil-kt.coil3", module = "coil-network-ktor2")
         }
     }
+}
+
+dependencies {
+    androidRuntimeClasspath(libs.compose.uiTooling)
 }
 
 compose{
