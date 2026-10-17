@@ -76,6 +76,7 @@ ktor_logging = { group = "io.ktor", name = "ktor-client-logging", version.ref = 
 ktor_client_mock = { group = "io.ktor", name = "ktor-client-mock", version.ref = "ktor" }
 
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 
 coil_base = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 coil_ktor = { group = "io.coil-kt.coil3", name = "coil-network-ktor3", version.ref = "coil" }
