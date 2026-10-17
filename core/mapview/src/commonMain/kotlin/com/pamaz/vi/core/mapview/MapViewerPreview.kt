@@ -1,5 +1,7 @@
 package com.pamaz.vi.core.mapview
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -8,6 +10,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.pamaz.vi.core.model.EntryCategory
 import com.pamaz.vi.core.model.MapConfig
 import com.pamaz.vi.core.model.NormalizedPoint
+import com.pamaz.vi.design.IloveViColors
 import com.pamaz.vi.design.IloveViTheme
 import kotlin.random.Random
 import kotlin.time.Instant
@@ -82,6 +85,35 @@ private fun MapViewerWithPinsPreview() {
             selectedPinId = pins.first().id,
             modifier = Modifier.fillMaxSize(),
         )
+    }
+}
+
+/**
+ * Step 5A-bis's single-image mode: [rememberDevMapImage] (the bundled dev map, or its
+ * grid-with-labels fallback if that resource is missing/disabled — see `README.md`'s rights note)
+ * with 6 fake pins across all three categories. Shows the required "loading placeholder until
+ * ready" state too: [rememberDevMapImage] returns `null` for one frame while the image decodes
+ * off the main thread, during which this preview shows a plain themed surface instead of the
+ * viewer.
+ */
+@Preview
+@Composable
+private fun MapViewerSingleImagePreview() {
+    IloveViTheme {
+        val devImage = rememberDevMapImage()
+        if (devImage == null) {
+            Box(modifier = Modifier.fillMaxSize().background(IloveViColors.bg900))
+        } else {
+            val state = rememberMapViewerState()
+            val pins = remember { fakePins(6) }
+            MapViewer(
+                state = state,
+                content = MapContent.SingleImage(devImage),
+                pins = pins,
+                selectedPinId = pins.first().id,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
 

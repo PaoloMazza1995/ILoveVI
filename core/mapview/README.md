@@ -98,6 +98,80 @@ panning/pinching with 1000 pins; that the three independent gesture `pointerInpu
 touchscreen; Coil3's disk cache behavior on-device; and the `MapViewerWithOneThousandPinsPreview` /
 placeholder-tile previews rendering correctly in Android Studio / Xcode preview.
 
+## Single-image mode (step 5A-bis)
+
+`MapViewer` now takes a `content: MapContent` — either `MapContent.Tiles(config)` (the original,
+network/tile-pyramid mode) or `MapContent.SingleImage(image)`: one already-decoded `ImageBitmap`, no
+tiling, network or backend at all. Both branches share the exact same `MapViewerState`, gesture
+handling (`mapViewerGestures`) and `PinLayer` — only which layer draws the map's pixels differs. The
+old `MapViewer(state, config: MapConfig, pins, ...)` signature still exists as a thin overload that
+wraps `config` into `MapContent.Tiles(config)`, so no existing caller needs to change.
+
+**Why no `TileSource` field on `MapContent.Tiles`:** the original task sketch for this step included
+one (`Tiles(val config: MapConfig, val source: TileSource)`), but no `TileSource` type exists
+anywhere in this module — `TileLayer` only ever needed `MapConfig` (its tile URLs come straight from
+`config.tileUrlTemplate` via Coil). `Tiles` was kept as just `config: MapConfig` to match what the
+code actually needs and to preserve the "thin, non-breaking overload" requirement literally; a
+`TileSource` abstraction can be added later if a concrete need for it shows up (e.g. swapping Coil
+for a different fetch strategy).
+
+**How single-image mode reuses tile-mode math unchanged:** `singleImageTileScheme(imageWidthPx,
+imageHeightPx)` builds a plain `TileScheme` with `tileSize = max(imageWidthPx, imageHeightPx)`,
+which makes `TileScheme.maxZoom` always `0` — so `TileScheme.scaleAt(zoom)` is exactly `2^zoom`
+(zoom `0` == the image's native 1:1 scale). Feeding that `TileScheme` into the *existing*
+`MapViewport`, `computeFocalZoomCenter`, `panCenter`, `hitTestPin` and `mapViewerGestures` makes
+every one of them work correctly for a single image with zero changes — none of them know or care
+that there's no real tile pyramid behind it. Zoom range: minimum is `singleImageMinZoom` (the zoom
+at which the whole image "contain"-fits the viewport — recomputed via a `LaunchedEffect` whenever
+the viewport is resized, e.g. rotation), maximum is `SINGLE_IMAGE_MAX_ZOOM` (`log2(8)`, i.e. 8x the
+image's native size — `SINGLE_IMAGE_MAX_SCALE`).
+
+**Pan clamping ("keep at least 25% visible"):** there is no *extra* pan-clamp function layered on
+top of gestures. `MapViewerState.center` is already hard-bounded to `0f..1f` on both axes by its own
+`Animatable` bounds, and across this module's entire zoom range that existing bound alone always
+keeps at least 50% of the image (or viewport, whichever is smaller) visible — comfortably over the
+required 25% floor. `visibleFraction(...)` in `SingleImageGeometry.kt` states and tests that
+invariant explicitly rather than leaving it as an unstated side effect; see its KDoc for the proof
+sketch. Adding a second, redundant clamp would just duplicate `mapViewerGestures` for no behavioral
+change.
+
+### The bundled dev image and its rights
+
+`composeResources/drawable/map_dev.png` and `map_dev_fallback.png` are both **generated
+placeholders** (a grid with coordinate labels and an unmissable watermark, produced the same way as
+`:tools:tilegen`'s `PlaceholderMapImage`) — **neither is a real or fan-made GTA VI map**, so both
+are safe to commit as-is; no `.gitignore` entry was needed for this step.
+
+If a maintainer later drops a *real* dev map image in at `map_dev.png` to replace this placeholder,
+confirm its usage rights first. **Only commit a replacement `map_dev.png` once its rights are
+confirmed** — until then, add it to `.gitignore` instead and keep shipping this generated
+placeholder, so a fresh checkout without that file still builds and runs (that's exactly what
+`rememberDevMapImage`'s fallback chain is for: real image missing/corrupt → bundled
+`map_dev_fallback.png` → an in-memory flat-color placeholder as the absolute last resort).
+
+### Release safety
+
+The dev image (and its fallback) are gated by `SINGLE_IMAGE_DEV_MODE_ENABLED`, a `const val`
+**generated at build time** by this module's `generateMapViewBuildConfig` Gradle task — `true`
+unless the build is invoked with `-Pilovevi.release=true`. Being a `const val`, it's inlined by the
+Kotlin compiler at every call site: there is no runtime setting to accidentally leave on, only a
+Gradle property to pass at build time.
+
+This project has no established per-module Android `buildType`/`BuildConfig` convention yet (no
+other module uses one), so this step didn't invent AGP-variant-specific wiring just for one flag — a
+single cross-platform Gradle property was the smallest change that satisfies "a build-config flag,
+not a runtime check." **Open item:** whoever wires up real release packaging (step 15, store
+readiness) needs to actually pass `-Pilovevi.release=true` to that build — it is not automatic
+today. Revisit this once Android/iOS release signing exists for real.
+
+### Loading a local image on desktop
+
+`loadSingleImageMapContentFromFile(file: File): MapContent.SingleImage` (JVM-only, in
+`jvmMain/.../DesktopSingleImageLoader.kt`) runs the same decode-and-downscale pipeline
+`rememberDevMapImage` uses, over any local PNG/JPEG — this is what `:tools:map-editor` (step 5B)
+is expected to call for its "Open image" mode, so a pin-placement session can start from any local
+image with no backend. Call it off the UI thread (e.g. from a coroutine on `Dispatchers.IO`).
+
 ## Trying it locally
 
 The previews in `MapViewerPreview.kt` point at a *local* placeholder tile set (never a real or
