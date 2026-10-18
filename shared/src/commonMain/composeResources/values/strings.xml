@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_tab_map_title">Map</string>
+    <string name="app_tab_catalog_title">Catalog</string>
+    <string name="app_tab_music_title">Music</string>
+    <string name="app_tab_news_title">News</string>
+    <string name="app_tab_settings_title">Settings</string>
+
+    <string name="app_map_filters_title">Map Filters</string>
+    <string name="app_detail_title">Detail</string>
+    <string name="app_compilation_title">Compilation</string>
+
+    <string name="app_stub_placeholder">Coming soon.</string>
+    <string name="app_detail_entry_label">Entry</string>
+    <string name="app_map_selected_entry_label">Selected entry</string>
+
+    <string name="app_back_content_description">Back</string>
+    <string name="app_open_filters_action">Filters</string>
+    <string name="app_open_compilation_action">Open compilation</string>
+    <string name="app_show_on_map_action">Show on map</string>
+</resources>

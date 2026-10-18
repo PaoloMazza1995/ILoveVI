@@ -65,7 +65,7 @@ class SingleImageGeometryTest {
     }
 
     @Test
-    fun singleImageMinZoom_fitsTheWholeImageInTheViewport() {
+    fun singleImageMinZoom_coversTheWholeViewport() {
         val scheme = singleImageTileScheme(4096, 3072)
         val minZoom = singleImageMinZoom(scheme, 1024f, 768f)
         val scale = scheme.scaleAt(minZoom).toFloat()
@@ -73,16 +73,16 @@ class SingleImageGeometryTest {
         val scaledHeight = scheme.heightPx * scale
 
         assertTrue(
-            scaledWidth <= 1024f + 0.5f,
-            "scaledWidth $scaledWidth must fit within viewport width 1024"
+            scaledWidth >= 1024f - 0.5f,
+            "scaledWidth $scaledWidth must cover viewport width 1024"
         )
         assertTrue(
-            scaledHeight <= 768f + 0.5f,
-            "scaledHeight $scaledHeight must fit within viewport height 768"
+            scaledHeight >= 768f - 0.5f,
+            "scaledHeight $scaledHeight must cover viewport height 768"
         )
         assertTrue(
             abs(scaledWidth - 1024f) < 0.5f || abs(scaledHeight - 768f) < 0.5f,
-            "expected a 'contain' fit: one axis should exactly match the viewport " +
+            "expected a 'cover' fit: one axis should exactly match the viewport " +
                     "(got ${scaledWidth}x$scaledHeight in a 1024x768 viewport)",
         )
     }

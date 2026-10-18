@@ -71,12 +71,25 @@ private fun Modifier.panZoomFlingGestures(
                     zoom = newZoom
                     newCenter
                 } else {
-                    panCenter(scheme, center, zoom, panChange.x, panChange.y)
+                    panCenter(
+                        scheme,
+                        center,
+                        zoom,
+                        panChange.x,
+                        panChange.y,
+                        viewportWidth,
+                        viewportHeight
+                    )
                 }
 
                 val liveCenter = center
                 val liveZoom = zoom
-                coroutineScope.launch { state.snapTo(liveCenter, liveZoom) }
+                val liveScale = scheme.scaleAt(liveZoom)
+                val boundsX =
+                    centerBoundsForAxis((scheme.widthPx * liveScale).toFloat(), viewportWidth)
+                val boundsY =
+                    centerBoundsForAxis((scheme.heightPx * liveScale).toFloat(), viewportHeight)
+                coroutineScope.launch { state.snapTo(liveCenter, liveZoom, boundsX, boundsY) }
                 event.changes.forEach { it.consume() }
                 val change = event.changes.first()
                 velocityTracker.addPosition(change.uptimeMillis, change.position)
@@ -89,7 +102,11 @@ private fun Modifier.panZoomFlingGestures(
         val scaledHeight = (scheme.heightPx * scale).toFloat()
         val flingVelocityX = -velocity.x / scaledWidth
         val flingVelocityY = -velocity.y / scaledHeight
-        coroutineScope.launch { state.flingBy(flingVelocityX, flingVelocityY) }
+        val viewportWidth = state.viewportSize.width.toFloat()
+        val viewportHeight = state.viewportSize.height.toFloat()
+        val boundsX = centerBoundsForAxis(scaledWidth, viewportWidth)
+        val boundsY = centerBoundsForAxis(scaledHeight, viewportHeight)
+        coroutineScope.launch { state.flingBy(flingVelocityX, flingVelocityY, boundsX, boundsY) }
     }
 }
 
@@ -143,7 +160,11 @@ private fun Modifier.tapGestures(
                 viewportWidth,
                 viewportHeight
             )
-            coroutineScope.launch { state.animateTo(newCenter, newZoom) }
+            val newScale = scheme.scaleAt(newZoom)
+            val boundsX = centerBoundsForAxis((scheme.widthPx * newScale).toFloat(), viewportWidth)
+            val boundsY =
+                centerBoundsForAxis((scheme.heightPx * newScale).toFloat(), viewportHeight)
+            coroutineScope.launch { state.animateTo(newCenter, newZoom, boundsX, boundsY) }
         },
     )
 }
@@ -177,7 +198,11 @@ private fun Modifier.scrollWheelZoomGestures(
                 viewportHeight
             )
 
-            coroutineScope.launch { state.snapTo(newCenter, newZoom) }
+            val newScale = scheme.scaleAt(newZoom)
+            val boundsX = centerBoundsForAxis((scheme.widthPx * newScale).toFloat(), viewportWidth)
+            val boundsY =
+                centerBoundsForAxis((scheme.heightPx * newScale).toFloat(), viewportHeight)
+            coroutineScope.launch { state.snapTo(newCenter, newZoom, boundsX, boundsY) }
             change.consume()
         }
     }
@@ -189,6 +214,21 @@ private fun Modifier.scrollWheelZoomGestures(
  * (transform+fling, tap+double-tap, scroll) rather than one, so none of them has to re-implement
  * the others' well-tested detection logic (`detectTapGestures` for taps, a custom loop only where
  * velocity tracking requires it).
+ *
+ * **Order matters here.** Chained `pointerInput` modifiers on one node dispatch
+ * [androidx.compose.ui.input.pointer.PointerEventPass.Main] — the pass every gesture detector
+ * used here reads from — innermost-first, bubbling out to the outermost; "innermost" means
+ * *last* in this `.then()` chain. `detectTapGestures` (inside [tapGestures])
+ * unconditionally consumes the initial down change as part of its own press bookkeeping, even for
+ * a gesture that turns out to be a drag. [panZoomFlingGestures]'s loop bails out the instant it
+ * sees an already-consumed change (`if (event.changes.any { it.isConsumed }) break`), so if it
+ * were dispatched *after* [tapGestures] had already consumed that first down, it would exit before
+ * a single move event arrived — panning would never work at all. Listing [panZoomFlingGestures]
+ * *last* makes it innermost, so it always reads every change while still unconsumed; once real
+ * movement starts, it consumes the change itself, which correctly cancels [tapGestures]' own
+ * `waitForUpOrCancellation` (it treats a consumed change as "gesture canceled, not a tap").
+ * [scrollWheelZoomGestures] only ever acts on [androidx.compose.ui.input.pointer.PointerEventType.Scroll]
+ * events the other two ignore, so its position in the chain doesn't matter for this ordering.
  */
 internal fun Modifier.mapViewerGestures(
     state: MapViewerState,
@@ -198,6 +238,6 @@ internal fun Modifier.mapViewerGestures(
     onMapTap: (NormalizedPoint) -> Unit,
     coroutineScope: CoroutineScope,
 ): Modifier = this
-    .panZoomFlingGestures(state, scheme, coroutineScope)
     .tapGestures(state, scheme, pins, onPinTap, onMapTap, coroutineScope)
     .scrollWheelZoomGestures(state, scheme, coroutineScope)
+    .panZoomFlingGestures(state, scheme, coroutineScope)

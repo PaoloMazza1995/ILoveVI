@@ -1,5 +1,6 @@
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.plugin.KotlinDependencyHandler
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -52,9 +53,41 @@ kotlin {
     }
     
     sourceSets {
-        androidMain.dependencies {
-            implementation(libs.compose.uiToolingPreview)
-            implementation(libs.compose.uiTooling)
+        // :core:design and :core:mapview only target jvm/android/iOS (see their own
+        // build.gradle.kts) — they have no js/wasmJs variant, so the real app shell (and its
+        // dependency on both modules) can't live in commonMain, where webApp's js/wasmJs targets
+        // would fail to resolve it. It lives on disk at src/appMain/kotlin instead, and is added
+        // as an *extra source directory* of both androidMain and iosMain below — not a real
+        // Kotlin source set/`dependsOn` edge, deliberately: Kotlin's default hierarchy template
+        // has no built-in grouping for exactly "android + iOS, not js/wasmJs", and introducing a
+        // custom intermediate source set for it disables the default template's own automatic
+        // wiring project-wide (confirmed: doing so disconnected the pre-existing `iosMain`/
+        // `Platform.ios.kt` from actually compiling at all). Aliasing the same directory into
+        // both leaf source sets avoids that entirely, at the cost of each file being compiled
+        // twice (once per platform) instead of once — see `shared/README.md`.
+        // `App()` itself stays `expect` in commonMain; `src/appMain` is where its real `actual`
+        // lives (web gets its own minimal placeholder `actual`, see jsMain/wasmJsMain).
+        val appMainDependencies: KotlinDependencyHandler.() -> Unit = {
+            implementation(libs.navigation.compose)
+            implementation(libs.koin.core)
+            implementation(libs.koin.compose)
+
+            implementation(project(":core:design"))
+            implementation(project(":core:mapview"))
+        }
+        androidMain {
+            kotlin.srcDir("src/appMain/kotlin")
+            dependencies {
+                implementation(libs.compose.uiToolingPreview)
+                implementation(libs.compose.uiTooling)
+                appMainDependencies()
+            }
+        }
+        iosMain {
+            kotlin.srcDir("src/appMain/kotlin")
+            dependencies {
+                appMainDependencies()
+            }
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
@@ -68,6 +101,11 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+        }
+        // Mirrors the appMain/androidMain/iosMain srcDir aliasing above, for the (currently
+        // Android-host-test-only — see shared/README.md) tests covering that code.
+        getByName("androidHostTest") {
+            kotlin.srcDir("src/appTest/kotlin")
         }
         jsMain.dependencies {
             implementation(libs.wrappers.browser)

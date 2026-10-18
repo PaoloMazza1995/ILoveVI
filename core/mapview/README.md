@@ -98,6 +98,13 @@ panning/pinching with 1000 pins; that the three independent gesture `pointerInpu
 touchscreen; Coil3's disk cache behavior on-device; and the `MapViewerWithOneThousandPinsPreview` /
 placeholder-tile previews rendering correctly in Android Studio / Xcode preview.
 
+## Used by the app module (step 8)
+
+`MapViewerSampleScreen` (public, non-`@Preview`) and `MapViewBuildConfig` (public, not `internal`)
+exist so `shared`'s Map tab can show this module's bundled dev map in debug builds — see
+`shared/README.md`'s "Debug-only Map sample" section. `MapViewBuildConfig.singleImageDevModeEnabled`
+is the one flag both modules key off of, rather than `shared` inventing a second one.
+
 ## Single-image mode (step 5A-bis)
 
 `MapViewer` now takes a `content: MapContent` — either `MapContent.Tiles(config)` (the original,

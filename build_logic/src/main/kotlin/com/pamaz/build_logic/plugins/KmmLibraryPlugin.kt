@@ -26,6 +26,9 @@ class KmmLibraryPlugin : Plugin<Project>{
                     namespace = target.appNamespace.plus(target.name)
                     compileSdk = target.appCompileSdkVersion
                     minSdk = target.appMinSdkVersion
+                    androidResources {
+                        enable = true
+                    }
                 }
             }
         }

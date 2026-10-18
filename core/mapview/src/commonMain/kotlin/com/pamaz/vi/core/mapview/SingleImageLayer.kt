@@ -21,8 +21,10 @@ import kotlin.math.roundToInt
  * corner instead of a per-tile offset.
  *
  * Drawn on an [IloveViColors.bg800] background (same "neutral surface, image on top" idiom
- * [TileLayer] uses) so any letterboxed margin — e.g. at [singleImageMinZoom], where one axis may
- * not fill the viewport — reads as themed empty space, not a broken image.
+ * [TileLayer] uses): [singleImageMinZoom]'s "cover" fit keeps both axes filling the viewport at
+ * every zoom in normal use, so this is mostly a brief placeholder for the one frame before layout
+ * (`dstSize` rounding could in principle leave a sub-pixel gap at an extreme aspect ratio) rather
+ * than a routinely-visible margin.
  */
 @Composable
 internal fun SingleImageLayer(

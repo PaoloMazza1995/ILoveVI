@@ -27,6 +27,8 @@ kotlinx-coroutines = "1.10.2"
 coil = "3.6.3"
 compottie= "2.0.2"
 kotlinx-serialization = "1.11.0"
+koin = "4.1.1"
+koin_annotations = "2.3.1"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -87,6 +89,14 @@ compottie-lite = { module = "io.github.alexzhirkevich:compottie-lite", version.r
 compottie-dot = { module = "io.github.alexzhirkevich:compottie-dot", version.ref = "compottie" }
 compottie-resources = { module = "io.github.alexzhirkevich:compottie-resources", version.ref = "compottie" }
 jetbrains-material-icons = { module = "org.jetbrains.compose.material:material-icons-core", version = "1.7.3" }
+
+###Koin (step 8: shared's Koin aggregate, via the existing kmm-koin-plugin convention plugin)
+koin_core = { group = "io.insert-koin", name = "koin-core", version.ref = "koin" }
+koin_compose = { module = "io.insert-koin:koin-compose", version.ref = "koin" }
+koin_compose_viewmodel = { module = "io.insert-koin:koin-compose-viewmodel", version.ref = "koin" }
+koin_annotations = { group = "io.insert-koin", name = "koin-annotations", version.ref = "koin_annotations" }
+koin_compiler = { group = "io.insert-koin", name = "koin-ksp-compiler", version.ref = "koin_annotations" }
+koin_coroutines = { group = "io.insert-koin", name = "koin-core-coroutines", version.ref = "koin" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

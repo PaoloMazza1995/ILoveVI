@@ -83,32 +83,60 @@ class MapGeometryTest {
     @Test
     fun panCenter_dragRight_movesCenterLeft() {
         val center = NormalizedPoint(0.5f, 0.5f)
-        val panned =
-            panCenter(scheme, center, zoom = scheme.maxZoom.toFloat(), dxPx = 100f, dyPx = 0f)
+        val panned = panCenter(
+            scheme, center, zoom = scheme.maxZoom.toFloat(), dxPx = 100f, dyPx = 0f,
+            viewportWidthPx = 800f, viewportHeightPx = 600f,
+        )
         assertTrue(panned.x < center.x)
         assertEquals(center.y, panned.y)
     }
 
     @Test
-    fun panCenter_isClampedToImageBounds_whenDraggingPastRightEdge() {
-        // Dragging far to the left (negative dx) reveals content far to the right of center.
+    fun panCenter_isClampedToViewportEdge_whenDraggingPastRightEdge() {
+        // Dragging far to the left (negative dx) reveals content far to the right of center. At
+        // scheme.maxZoom (native 1:1 scale), the scaled image (8192x6144) is far bigger than the
+        // 800x600 viewport, so the clamp is centerBoundsForAxis's "half" bound, not a bare 1f: the
+        // image's right edge can never clear the viewport's right edge.
         val center = NormalizedPoint(0.99f, 0.5f)
         val panned = panCenter(
-            scheme,
-            center,
-            zoom = scheme.maxZoom.toFloat(),
-            dxPx = -1_000_000f,
-            dyPx = 0f
+            scheme, center, zoom = scheme.maxZoom.toFloat(), dxPx = -1_000_000f, dyPx = 0f,
+            viewportWidthPx = 800f, viewportHeightPx = 600f,
         )
-        assertEquals(1f, panned.x)
+        val expectedMax = centerBoundsForAxis(8192f, 800f).endInclusive
+        assertAlmostEquals(expectedMax, panned.x)
     }
 
     @Test
-    fun panCenter_isClampedToImageBounds_pastTopEdge() {
+    fun panCenter_isClampedToViewportEdge_pastTopEdge() {
         val center = NormalizedPoint(0.5f, 0.01f)
-        val panned =
-            panCenter(scheme, center, zoom = scheme.maxZoom.toFloat(), dxPx = 0f, dyPx = 1_000_000f)
-        assertEquals(0f, panned.y)
+        val panned = panCenter(
+            scheme, center, zoom = scheme.maxZoom.toFloat(), dxPx = 0f, dyPx = 1_000_000f,
+            viewportWidthPx = 800f, viewportHeightPx = 600f,
+        )
+        val expectedMin = centerBoundsForAxis(6144f, 600f).start
+        assertAlmostEquals(expectedMin, panned.y)
+    }
+
+    @Test
+    fun centerBoundsForAxis_locksToCenter_whenImageFitsInsideViewport() {
+        // The letterboxed axis at "contain" fit: no value other than 0.5f avoids asymmetric
+        // empty space on either side.
+        val bounds = centerBoundsForAxis(scaledDimPx = 400f, viewportDimPx = 800f)
+        assertEquals(0.5f, bounds.start)
+        assertEquals(0.5f, bounds.endInclusive)
+    }
+
+    @Test
+    fun centerBoundsForAxis_neverLetsTheImageEdgeClearTheViewport() {
+        val bounds = centerBoundsForAxis(scaledDimPx = 2000f, viewportDimPx = 500f)
+        // At the lower bound, the image is pushed as far right as allowed: its left edge sits
+        // exactly at the viewport's left edge (x=0), never exposing blank space past it.
+        val leftAtLowerBound = 500f / 2f - bounds.start * 2000f
+        assertAlmostEquals(0f, leftAtLowerBound)
+        // At the upper bound, the image is pushed as far left as allowed: its right edge sits
+        // exactly at the viewport's right edge.
+        val leftAtUpperBound = 500f / 2f - bounds.endInclusive * 2000f
+        assertAlmostEquals(500f, leftAtUpperBound + 2000f)
     }
 
     private fun pinAt(id: String, point: NormalizedPoint) =

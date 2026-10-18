@@ -39,7 +39,8 @@ private val PreviewMapConfig = MapConfig(
     updatedAt = Instant.fromEpochMilliseconds(0),
 )
 
-private fun fakePins(count: Int, seed: Int = 0): List<MapViewerPin> {
+/** Also used by [MapViewerSampleScreen] — kept `internal` rather than `private` for that reuse. */
+internal fun fakePins(count: Int, seed: Int = 0): List<MapViewerPin> {
     val random = Random(seed)
     val categories = EntryCategory.entries
     return List(count) { index ->

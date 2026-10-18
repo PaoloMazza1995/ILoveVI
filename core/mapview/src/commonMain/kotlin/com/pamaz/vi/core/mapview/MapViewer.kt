@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.onSizeChanged
@@ -62,6 +64,12 @@ fun MapViewer(
     }
 
     val viewportSize = state.viewportSize
+    // Only [MapContent.SingleImage] needs this: its fit zoom depends on the viewport (unlike
+    // [MapContent.Tiles], where zoom 0 is always "the whole map" by [TileScheme]'s own convention
+    // — see [TileScheme.minZoom]'s KDoc), so it can't simply be MapViewer's default `initialZoom`.
+    // Applied once per [content] instance (not keyed on [viewportSize], so a later resize/rotation
+    // never overrides zoom/pan the user already chose) the first time the viewport is measured.
+    var hasAppliedInitialFitZoom by remember(content) { mutableStateOf(false) }
     LaunchedEffect(state, content, viewportSize) {
         when (content) {
             is MapContent.Tiles ->
@@ -75,6 +83,17 @@ fun MapViewer(
                     scheme, viewportSize.width.toFloat(), viewportSize.height.toFloat(),
                 )
                 state.setZoomRange(minZoom, SINGLE_IMAGE_MAX_ZOOM)
+                if (!hasAppliedInitialFitZoom && viewportSize.width > 0 && viewportSize.height > 0) {
+                    hasAppliedInitialFitZoom = true
+                    val fitScale = scheme.scaleAt(minZoom)
+                    val boundsX = centerBoundsForAxis(
+                        (scheme.widthPx * fitScale).toFloat(), viewportSize.width.toFloat(),
+                    )
+                    val boundsY = centerBoundsForAxis(
+                        (scheme.heightPx * fitScale).toFloat(), viewportSize.height.toFloat(),
+                    )
+                    state.snapTo(state.center, minZoom, boundsX, boundsY)
+                }
             }
         }
     }

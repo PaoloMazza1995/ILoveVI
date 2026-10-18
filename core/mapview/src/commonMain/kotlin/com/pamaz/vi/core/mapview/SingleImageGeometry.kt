@@ -31,11 +31,14 @@ internal fun singleImageTileScheme(imageWidthPx: Int, imageHeightPx: Int): TileS
 internal val SINGLE_IMAGE_MAX_ZOOM: Float = log2(SINGLE_IMAGE_MAX_SCALE)
 
 /**
- * The zoom at which the whole image exactly fits inside a [viewportWidthPx] by [viewportHeightPx]
- * viewport ("contain" fit: the image is never cropped; the axis that doesn't exactly match the
- * viewport letterboxes). Returns `0f` if the viewport hasn't been measured yet (either dimension
- * `<= 0`) — [MapViewer] re-derives this every time [MapViewerState.viewportSize] changes, so that
- * transient `0f` only shows for a single frame before layout.
+ * The zoom at which the image fully covers a [viewportWidthPx] by [viewportHeightPx] viewport
+ * ("cover" fit: the viewport is always entirely filled, edge-to-edge, with no letterboxing — the
+ * axis that doesn't exactly match the viewport is cropped instead; [centerBoundsForAxis] is what
+ * keeps that crop from ever revealing empty space beyond the image's own edge, and panning is how
+ * the cropped part of the image becomes reachable). Returns `0f` if the viewport hasn't been
+ * measured yet (either dimension `<= 0`) — [MapViewer] re-derives this every time
+ * [MapViewerState.viewportSize] changes, so that transient `0f` only shows for a single frame
+ * before layout.
  */
 internal fun singleImageMinZoom(
     scheme: TileScheme,
@@ -43,14 +46,17 @@ internal fun singleImageMinZoom(
     viewportHeightPx: Float,
 ): Float {
     if (viewportWidthPx <= 0f || viewportHeightPx <= 0f) return 0f
-    val fitScale = min(viewportWidthPx / scheme.widthPx, viewportHeightPx / scheme.heightPx)
+    val fitScale = max(viewportWidthPx / scheme.widthPx, viewportHeightPx / scheme.heightPx)
     return log2(fitScale.toDouble()).toFloat()
 }
 
 /**
- * The minimum fraction of the image (or viewport, whichever is smaller) that single-image mode
- * guarantees stays visible while panning — see [visibleFraction]'s KDoc for why no *extra*
- * pan-clamp function exists on top of [MapViewerState]'s own `0f..1f` center bound.
+ * The minimum fraction of the image (or viewport, whichever is smaller) single-image mode
+ * guarantees stays visible while panning. [centerBoundsForAxis] (used by [panCenter] and
+ * [computeFocalZoomCenter]) enforces a *stricter* rule than this one — the image's edge can never
+ * clear the viewport's edge at all, so this fraction is always `1f` in practice — but the weaker
+ * "at least 25% visible" invariant is kept and tested here too, since it's the actual product
+ * rule the stricter clamp was built to satisfy.
  */
 internal const val SINGLE_IMAGE_MIN_VISIBLE_FRACTION = 0.25f
 
@@ -59,16 +65,6 @@ internal const val SINGLE_IMAGE_MIN_VISIBLE_FRACTION = 0.25f
  * stays visible along one axis, for a [centerAxis] (the matching
  * [com.pamaz.vi.core.model.NormalizedPoint] coordinate), [scaledDimPx] (the image's rendered
  * width/height at the current zoom) and [viewportDimPx] (the viewport's width/height).
- *
- * This module adds no dedicated pan-clamp for single-image mode: [MapViewerState.center] is
- * already hard-bounded to `0f..1f` on both axes by its own `Animatable` bounds, and across this
- * module's whole zoom range ([singleImageMinZoom]..[SINGLE_IMAGE_MAX_ZOOM]) that existing bound
- * alone always keeps at least 50% of the smaller dimension visible — comfortably over
- * [SINGLE_IMAGE_MIN_VISIBLE_FRACTION] — so a second, redundant clamp would only duplicate
- * [mapViewerGestures] for no behavioral change (the product rule is "the image can never be
- * dragged completely out of view: keep at least 25% visible", not "panning must be artificially
- * restricted beyond the existing image-bounds clamp"). This function exists so that invariant is
- * written down and tested, rather than left as an unstated side effect of the zoom range.
  */
 internal fun visibleFraction(centerAxis: Float, scaledDimPx: Float, viewportDimPx: Float): Float {
     if (viewportDimPx <= 0f || scaledDimPx <= 0f) return 1f

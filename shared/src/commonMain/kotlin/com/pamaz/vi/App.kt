@@ -1,49 +1,16 @@
 package com.pamaz.vi
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.safeContentPadding
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import org.jetbrains.compose.resources.painterResource
+import androidx.compose.runtime.Composable
 
-import ilovevi.shared.generated.resources.Res
-import ilovevi.shared.generated.resources.compose_multiplatform
-
+/**
+ * The app's single entry point — every platform's shell (`androidApp`'s `MainActivity`,
+ * `shared`'s own `MainViewController` for iOS, `webApp`'s `main`) calls this and nothing else.
+ *
+ * `actual`s live in two places, not one: `:core:design` and `:core:mapview` (the real app
+ * shell's dependencies — see `shared/README.md`) only target JVM/Android/iOS, not js/wasmJs, so
+ * the real shell's `actual` lives in the `appMain` intermediate source set (shared by
+ * `androidMain`/`iosMain` only); `jsMain`/`wasmJsMain` each get their own minimal placeholder
+ * `actual` instead of the real shell.
+ */
 @Composable
-@Preview
-fun App() {
-    MaterialTheme {
-        var showContent by remember { mutableStateOf(false) }
-        Column(
-            modifier = Modifier
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .safeContentPadding()
-                .fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Button(onClick = { showContent = !showContent }) {
-                Text("Click me!")
-            }
-            AnimatedVisibility(showContent) {
-                val greeting = remember { Greeting().greet() }
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Image(painterResource(Res.drawable.compose_multiplatform), null)
-                    Text("Compose: $greeting")
-                }
-            }
-        }
-    }
-}
+expect fun App()

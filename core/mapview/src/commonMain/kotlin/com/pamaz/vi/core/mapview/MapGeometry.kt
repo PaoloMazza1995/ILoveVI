@@ -41,7 +41,10 @@ internal fun computeFocalZoomCenter(
 
     val newX = focalPoint.x - (focalScreen.x - viewportWidthPx / 2f) / scaledWidth
     val newY = focalPoint.y - (focalScreen.y - viewportHeightPx / 2f) / scaledHeight
-    return NormalizedPoint(newX.coerceIn(0f, 1f), newY.coerceIn(0f, 1f))
+    return NormalizedPoint(
+        newX.coerceIn(centerBoundsForAxis(scaledWidth, viewportWidthPx)),
+        newY.coerceIn(centerBoundsForAxis(scaledHeight, viewportHeightPx)),
+    )
 }
 
 /**
@@ -55,6 +58,8 @@ internal fun panCenter(
     zoom: Float,
     dxPx: Float,
     dyPx: Float,
+    viewportWidthPx: Float,
+    viewportHeightPx: Float,
 ): NormalizedPoint {
     val scale = scheme.scaleAt(zoom)
     val scaledWidth = (scheme.widthPx * scale).toFloat()
@@ -62,7 +67,31 @@ internal fun panCenter(
 
     val newX = currentCenter.x - dxPx / scaledWidth
     val newY = currentCenter.y - dyPx / scaledHeight
-    return NormalizedPoint(newX.coerceIn(0f, 1f), newY.coerceIn(0f, 1f))
+    return NormalizedPoint(
+        newX.coerceIn(centerBoundsForAxis(scaledWidth, viewportWidthPx)),
+        newY.coerceIn(centerBoundsForAxis(scaledHeight, viewportHeightPx)),
+    )
+}
+
+/**
+ * The inclusive range the normalized center coordinate on one axis may take so the map image can
+ * never be panned/zoomed far enough to show empty space beyond its own edge — the "scroll limit"
+ * every pan/pinch/fling/double-tap update is clamped to, replacing a bare `0f..1f` clamp (which
+ * only keeps the center *point* on the image, not the image's edges aligned with the viewport).
+ *
+ * If the image is already smaller than the viewport on this axis ([scaledDimPx] <=
+ * [viewportDimPx] — e.g. the letterboxed axis at [singleImageMinZoom]), the only value that avoids
+ * *asymmetric* empty space is `0.5f` (centered, with an equal margin on both sides); otherwise it's
+ * how far the center may move from `0.5f` before the image's near edge would clear the viewport's
+ * edge on that side.
+ */
+internal fun centerBoundsForAxis(
+    scaledDimPx: Float,
+    viewportDimPx: Float,
+): ClosedFloatingPointRange<Float> {
+    if (scaledDimPx <= viewportDimPx) return 0.5f..0.5f
+    val half = viewportDimPx / (2f * scaledDimPx)
+    return half..(1f - half)
 }
 
 /**

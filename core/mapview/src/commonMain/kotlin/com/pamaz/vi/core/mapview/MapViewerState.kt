@@ -86,19 +86,43 @@ class MapViewerState internal constructor(
         }
     }
 
-    /** Smoothly animates [center] and [zoom] to [point]/[zoom], clamping zoom to [minZoom]..[maxZoom]. */
-    suspend fun animateTo(point: NormalizedPoint, zoom: Float) = coroutineScope {
+    /**
+     * Smoothly animates [center] and [zoom] to [point]/[zoom], clamping zoom to
+     * [minZoom]..[maxZoom] and [point] to [centerBoundsX]/[centerBoundsY] (the "scroll limit" for
+     * the axis — see [centerBoundsForAxis]; defaults to the unrestricted `0f..1f` for callers that
+     * already guarantee [point] is in range, e.g. [computeFocalZoomCenter]'s own output).
+     */
+    suspend fun animateTo(
+        point: NormalizedPoint,
+        zoom: Float,
+        centerBoundsX: ClosedFloatingPointRange<Float> = 0f..1f,
+        centerBoundsY: ClosedFloatingPointRange<Float> = 0f..1f,
+    ) = coroutineScope {
         val spec = tween<Float>(durationMillis = ANIMATE_TO_DURATION_MS)
         val targetZoom = zoom.coerceIn(minZoom, maxZoom)
-        launch { centerXAnimatable.animateTo(point.x.coerceIn(0f, 1f), spec) }
-        launch { centerYAnimatable.animateTo(point.y.coerceIn(0f, 1f), spec) }
+        centerXAnimatable.updateBounds(centerBoundsX.start, centerBoundsX.endInclusive)
+        centerYAnimatable.updateBounds(centerBoundsY.start, centerBoundsY.endInclusive)
+        launch { centerXAnimatable.animateTo(point.x.coerceIn(centerBoundsX), spec) }
+        launch { centerYAnimatable.animateTo(point.y.coerceIn(centerBoundsY), spec) }
         launch { zoomAnimatable.animateTo(targetZoom, spec) }
     }
 
-    /** Instantly jumps to [point]/[zoom] — used while a drag/pinch gesture is actively tracking the finger. */
-    internal suspend fun snapTo(point: NormalizedPoint, zoom: Float) = coroutineScope {
-        launch { centerXAnimatable.snapTo(point.x.coerceIn(0f, 1f)) }
-        launch { centerYAnimatable.snapTo(point.y.coerceIn(0f, 1f)) }
+    /**
+     * Instantly jumps to [point]/[zoom] — used while a drag/pinch gesture is actively tracking the
+     * finger. [centerBoundsX]/[centerBoundsY] re-arm [centerXAnimatable]/[centerYAnimatable]'s own
+     * bounds for the *current* zoom/viewport (see [centerBoundsForAxis]) every call, so a bound
+     * left over from a different zoom level never lingers into the next gesture.
+     */
+    internal suspend fun snapTo(
+        point: NormalizedPoint,
+        zoom: Float,
+        centerBoundsX: ClosedFloatingPointRange<Float> = 0f..1f,
+        centerBoundsY: ClosedFloatingPointRange<Float> = 0f..1f,
+    ) = coroutineScope {
+        centerXAnimatable.updateBounds(centerBoundsX.start, centerBoundsX.endInclusive)
+        centerYAnimatable.updateBounds(centerBoundsY.start, centerBoundsY.endInclusive)
+        launch { centerXAnimatable.snapTo(point.x.coerceIn(centerBoundsX)) }
+        launch { centerYAnimatable.snapTo(point.y.coerceIn(centerBoundsY)) }
         launch { zoomAnimatable.snapTo(zoom.coerceIn(minZoom, maxZoom)) }
     }
 
@@ -110,14 +134,24 @@ class MapViewerState internal constructor(
 
     /**
      * Glides [center] from [velocityXPerSecond]/[velocityYPerSecond] (normalized units/second) to
-     * a stop via exponential decay, stopping early at `0f`/`1f` thanks to the bounds set in [centerXAnimatable]/[centerYAnimatable].
+     * a stop via exponential decay, stopping early at the edges of [centerBoundsX]/[centerBoundsY]
+     * (the same "scroll limit" [snapTo] uses — zoom never changes mid-fling, so the bound computed
+     * once at release time, from [MapGestures.kt]'s `panZoomFlingGestures`, stays valid for the
+     * whole decay) rather than the unrestricted `0f`/`1f` [centerXAnimatable]/[centerYAnimatable]
+     * started with.
      */
-    internal suspend fun flingBy(velocityXPerSecond: Float, velocityYPerSecond: Float) =
-        coroutineScope {
-            val spec = exponentialDecay<Float>(absVelocityThreshold = FLING_STOP_VELOCITY)
-            launch { centerXAnimatable.animateDecay(velocityXPerSecond, spec) }
-            launch { centerYAnimatable.animateDecay(velocityYPerSecond, spec) }
-        }
+    internal suspend fun flingBy(
+        velocityXPerSecond: Float,
+        velocityYPerSecond: Float,
+        centerBoundsX: ClosedFloatingPointRange<Float> = 0f..1f,
+        centerBoundsY: ClosedFloatingPointRange<Float> = 0f..1f,
+    ) = coroutineScope {
+        centerXAnimatable.updateBounds(centerBoundsX.start, centerBoundsX.endInclusive)
+        centerYAnimatable.updateBounds(centerBoundsY.start, centerBoundsY.endInclusive)
+        val spec = exponentialDecay<Float>(absVelocityThreshold = FLING_STOP_VELOCITY)
+        launch { centerXAnimatable.animateDecay(velocityXPerSecond, spec) }
+        launch { centerYAnimatable.animateDecay(velocityYPerSecond, spec) }
+    }
 }
 
 /**
