@@ -22,6 +22,13 @@ enum class IloveViMapPinCategory(val category: IloveViCategory) {
     Item(IloveViCategory.Items),
 }
 
+/** [category]'s generic icon, used when [IloveViMapPin] isn't given a more specific sub-type [icon]. */
+private fun IloveViMapPinCategory.defaultIcon(): IloveViIcon = when (this) {
+    IloveViMapPinCategory.Weapon -> IloveViIcon.PISTOL
+    IloveViMapPinCategory.Vehicle -> IloveViIcon.CAR
+    IloveViMapPinCategory.Item -> IloveViIcon.BOX
+}
+
 private val PinDiameter = 32.dp
 private val SelectedRingDiameter = 48.dp
 private val SelectedBoxDiameter = 52.dp
@@ -33,11 +40,19 @@ private val IconInset = 4.dp
  * bg-900 outer border. The colored pin always stays 32dp: when selected (52dp total) it gets
  * an extra 3dp ink outer ring at 48dp diameter, as in preview.html (the colored circle
  * there keeps the same r16 radius in both the normal and selected pin).
+ *
+ * [icon] shows the entry's *sub-type* glyph (e.g. [IloveViIcon.RIFLE] for a rifle), from
+ * `EntryIcons.kt`'s `Entry.icon()`; it defaults to [category]'s generic icon
+ * (Pistol/Car/Box) for callers that only know the category. The icon itself stays decorative
+ * (`contentDescription = null`): the caller (`:core:mapview`'s `PinLayer`) already attaches one
+ * merged semantics description to the whole pin, so a second description here would be announced
+ * twice by a screen reader.
  */
 @Composable
 fun IloveViMapPin(
     category: IloveViMapPinCategory,
     modifier: Modifier = Modifier,
+    icon: IloveViIcon = category.defaultIcon(),
     selected: Boolean = false,
 ) {
     val boxSize = if (selected) SelectedBoxDiameter else PinDiameter
@@ -60,11 +75,7 @@ fun IloveViMapPin(
                 .border(PinBorderWidth, IloveViColors.bg900, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            when (category) {
-                IloveViMapPinCategory.Weapon -> IconWeaponCrosshair(tint = IloveViColors.inkOnBrand, size = iconSize)
-                IloveViMapPinCategory.Vehicle -> IconVehicle(tint = IloveViColors.inkOnBrand, size = iconSize)
-                IloveViMapPinCategory.Item -> IconStar(tint = IloveViColors.inkOnBrand, size = iconSize)
-            }
+            IloveViIcon(icon = icon, tint = IloveViColors.inkOnBrand, size = iconSize)
         }
     }
 }
@@ -91,4 +102,13 @@ private fun IloveViMapPinItemPreview() {
 @Composable
 private fun IloveViMapPinSelectedPreview() {
     IloveViTheme { IloveViMapPin(category = IloveViMapPinCategory.Weapon, selected = true) }
+}
+
+/** A pin with a specific sub-type icon, rather than the default category-level one. */
+@Preview
+@Composable
+private fun IloveViMapPinSubTypePreview() {
+    IloveViTheme {
+        IloveViMapPin(category = IloveViMapPinCategory.Weapon, icon = IloveViIcon.RIFLE)
+    }
 }

@@ -15,6 +15,6 @@ enum class EntryCategory {
     /** Cars, motorcycles, boats, helicopters and planes ([Vehicle]). */
     VEHICLE,
 
-    /** Health, ammo and armor pickups ([Item]). */
+    /** Ammo, armor and other pickups ([Item]). */
     ITEM,
 }

@@ -2,6 +2,7 @@ package com.pamaz.vi.design.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -10,10 +11,13 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.pamaz.vi.design.IloveViColors
@@ -216,33 +220,6 @@ fun IconImagePlaceholder(
     }
 }
 
-/**
- * Weapons category crosshair: centered r6 circle + 4 ticks, used both in the
- * ListRow/Card thumbnail ("M12 2v5M12 17v5M2 12h5M17 12h5", viewBox 24x24) and as the
- * MapPin's inner icon (same path, expressed in coordinates relative to the center in the markup:
- * it is geometrically identical).
- */
-@Composable
-fun IconWeaponCrosshair(
-    modifier: Modifier = Modifier,
-    tint: Color = IloveViColors.ink,
-    size: Dp = 24.dp,
-    strokeWidth: Dp = 2.dp,
-) {
-    Canvas(modifier.size(size)) {
-        val s = size.toPx() / NATIVE_BOX
-        val stroke = iconStroke(strokeWidth.toPx())
-        drawCircle(tint, radius = 6f * s, center = Offset(12f * s, 12f * s), style = stroke)
-        val ticks = Path().apply {
-            moveTo(12f * s, 2f * s); lineTo(12f * s, 7f * s)
-            moveTo(12f * s, 17f * s); lineTo(12f * s, 22f * s)
-            moveTo(2f * s, 12f * s); lineTo(7f * s, 12f * s)
-            moveTo(17f * s, 12f * s); lineTo(22f * s, 12f * s)
-        }
-        drawPath(ticks, color = tint, style = stroke)
-    }
-}
-
 /** preview.html ListRow (action "Add to playlist"): "M5 12.5l4.5 4.5L19 7.5" */
 @Composable
 fun IconCheck(
@@ -285,73 +262,6 @@ fun IconMusicNote(
         drawPath(stem, color = tint, style = stroke)
         drawCircle(tint, radius = 2.5f * s, center = Offset(6.5f * s, 18f * s), style = stroke)
         drawCircle(tint, radius = 2.5f * s, center = Offset(16.5f * s, 16f * s), style = stroke)
-    }
-}
-
-/**
- * Vehicle seen from the side, MapPin icon for the Vehicles category: "M-8 3v-3l2-4h12l2 4v3M-8 3h16M-6 3v3M6 3v3"
- * (coordinates relative to the center in the original markup), translated here into a 24x24 viewBox.
- */
-@Composable
-fun IconVehicle(
-    modifier: Modifier = Modifier,
-    tint: Color = IloveViColors.inkOnBrand,
-    size: Dp = 24.dp,
-    strokeWidth: Dp = 2.dp,
-) {
-    Canvas(modifier.size(size)) {
-        val s = size.toPx() / NATIVE_BOX
-        val body = Path().apply {
-            moveTo(4f * s, 15f * s)
-            lineTo(4f * s, 12f * s)
-            lineTo(6f * s, 8f * s)
-            lineTo(18f * s, 8f * s)
-            lineTo(20f * s, 12f * s)
-            lineTo(20f * s, 15f * s)
-            moveTo(4f * s, 15f * s)
-            lineTo(20f * s, 15f * s)
-            moveTo(6f * s, 15f * s)
-            lineTo(6f * s, 18f * s)
-            moveTo(18f * s, 15f * s)
-            lineTo(18f * s, 18f * s)
-        }
-        drawPath(body, color = tint, style = iconStroke(strokeWidth.toPx()))
-    }
-}
-
-/**
- * 5-pointed star, MapPin icon for the Items category:
- * "M0 -8l3 6 6 1-4.5 4 1.5 6-6-3.5-6 3.5 1.5-6-4.5-4 6-1z" with transform="scale(0.8)" in the
- * original markup, here pre-applied and translated into a 24x24 viewBox (never filled: outline only).
- */
-@Composable
-fun IconStar(
-    modifier: Modifier = Modifier,
-    tint: Color = IloveViColors.inkOnBrand,
-    size: Dp = 24.dp,
-    strokeWidth: Dp = 2.dp,
-) {
-    Canvas(modifier.size(size)) {
-        val s = size.toPx() / NATIVE_BOX
-        val points = listOf(
-            12f to 5.6f,
-            14.4f to 10.4f,
-            19.2f to 11.2f,
-            15.6f to 14.4f,
-            16.8f to 19.2f,
-            12f to 16.4f,
-            7.2f to 19.2f,
-            8.4f to 14.4f,
-            4.8f to 11.2f,
-            9.6f to 10.4f,
-        )
-        val path = Path().apply {
-            points.forEachIndexed { index, (x, y) ->
-                if (index == 0) moveTo(x * s, y * s) else lineTo(x * s, y * s)
-            }
-            close()
-        }
-        drawPath(path, color = tint, style = iconStroke(strokeWidth.toPx()))
     }
 }
 
@@ -429,4 +339,155 @@ fun IconSettingsSliders(
         drawCircle(tint, radius = 2f * s, center = Offset(16f * s, 7f * s), style = stroke)
         drawCircle(tint, radius = 2f * s, center = Offset(8f * s, 17f * s), style = stroke)
     }
+}
+
+// --- Category/sub-type icon set (step I) -----------------------------------------------------
+//
+// Unlike the icons above (plain Canvas-drawing composables, each hardcoded to one specific use),
+// these 13 are built as [ImageVector]s and exposed through an [IloveViIcon] enum: core:model's
+// EntryCategory/WeaponType/VehicleType/ItemType need to be *mapped to a value* and passed around
+// (see EntryIcons.kt), which a bare `@Composable fun IconXxx()` can't be — an enum constant backed
+// by a plain-data ImageVector is the standard Compose shape for "pick an icon based on data". The
+// 24x24 viewport, 2px stroke, round caps/joins and "never filled" rule are unchanged from the
+// Canvas icons above and from design/tokens.json's Iconography section; only the underlying API
+// differs, and only because the mapping in bullet 2 requires it.
+//
+// This first set was drawn by hand (not sourced from a designer mockup — none of these 13 exist
+// in preview.html, since GTA VI's real weapon/vehicle/item icons aren't known pre-release) and can
+// be freely replaced later: swapping an icon only ever means changing the path-data string below
+// for that one [IloveViIcon] entry — the enum, the mapping functions and every call site stay
+// untouched. See the design system README's "Iconography" section for how to add or replace one.
+
+/** Builds a 24x24, stroke-only (never filled) [ImageVector] from one SVG path-data string. */
+private fun strokeIconVector(name: String, pathData: String): ImageVector =
+    ImageVector.Builder(
+        name = name,
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).addPath(
+        pathData = addPathNodes(pathData),
+        fill = null,
+        stroke = SolidColor(Color.Black),
+        strokeLineWidth = 2f,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round,
+    ).build()
+
+/**
+ * The 13 category/sub-type icons: one per [com.pamaz.vi.core.model.WeaponType] (5),
+ * [com.pamaz.vi.core.model.VehicleType] (5) and [com.pamaz.vi.core.model.ItemType] (2) value, plus
+ * [BOX] for the generic Items *category* (there is no single "item" sub-type to fall back to).
+ * [PISTOL]/[CAR]/[BOX] double as the Weapons/Vehicles/Items *category* icons — see
+ * `EntryIcons.kt`'s `EntryCategory.icon()`.
+ */
+enum class IloveViIcon(val imageVector: ImageVector) {
+    /** pistol: M3 7h17v4H3z M7 11l-1.5 8h4.5l1.5-8 M11.5 11v3H15 */
+    PISTOL(strokeIconVector("Pistol", "M3 7h17v4H3z M7 11l-1.5 8h4.5l1.5-8 M11.5 11v3H15")),
+
+    /** rifle: M6 10h9v3H6z M15 11h7 M6 10.5L2 9v5l4-.5 M10 13v4 M17 9v2 M8 13l-1 4 */
+    RIFLE(
+        strokeIconVector(
+            "Rifle",
+            "M6 10h9v3H6z M15 11h7 M6 10.5L2 9v5l4-.5 M10 13v4 M17 9v2 M8 13l-1 4"
+        )
+    ),
+
+    /** machine_gun: M5 8h12v3.5H5z M17 9.75h5 M5 9L2 8v4l3-.5 M9 11.5h5v5H9z M7 11.5l-1 4 M18 8v-2 M16 14l2 4 M18 14l1.5 4 */
+    MACHINE_GUN(
+        strokeIconVector(
+            "MachineGun",
+            "M5 8h12v3.5H5z M17 9.75h5 M5 9L2 8v4l3-.5 M9 11.5h5v5H9z M7 11.5l-1 4 M18 8v-2 M16 14l2 4 M18 14l1.5 4",
+        ),
+    ),
+
+    /** melee: M20 4c-5 1-9 4-11 9l2 2c5-2 8-6 9-11z M7.5 12.5l4 4 M9.5 14.5L4.5 19.5 */
+    MELEE(
+        strokeIconVector(
+            "Melee",
+            "M20 4c-5 1-9 4-11 9l2 2c5-2 8-6 9-11z M7.5 12.5l4 4 M9.5 14.5L4.5 19.5"
+        )
+    ),
+
+    /** explosive: M12 8a6 6 0 11-.01 0 M10 8V5h4v3 M14 5l4-1 M18 4l1.5 2.5 */
+    EXPLOSIVE(
+        strokeIconVector(
+            "Explosive",
+            "M12 8a6 6 0 11-.01 0 M10 8V5h4v3 M14 5l4-1 M18 4l1.5 2.5"
+        )
+    ),
+
+    /** car: M5 17H3v-5l2-1 2-4h10l2 4 2 1v5h-2 M9 17h6 M7 15a2 2 0 100 4 2 2 0 000-4 M17 15a2 2 0 100 4 2 2 0 000-4 */
+    CAR(
+        strokeIconVector(
+            "Car",
+            "M5 17H3v-5l2-1 2-4h10l2 4 2 1v5h-2 M9 17h6 M7 15a2 2 0 100 4 2 2 0 000-4 M17 15a2 2 0 100 4 2 2 0 000-4",
+        ),
+    ),
+
+    /** motorcycle: M6 13.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7 M18 13.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7 M6 17l3.5-5h5.5l3 5 M9 12l1.5-3h4l1 3 M15.5 9l1.5-2.5h2.5 M16.5 12.5l1.5 4.5 */
+    MOTORCYCLE(
+        strokeIconVector(
+            "Motorcycle",
+            "M6 13.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7 M18 13.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7 M6 17l3.5-5h5.5l3 5 " +
+                    "M9 12l1.5-3h4l1 3 M15.5 9l1.5-2.5h2.5 M16.5 12.5l1.5 4.5",
+        ),
+    ),
+
+    /** boat: M3 15l2 5h14l2-5z M12 3v12 M12 4l6 9h-6 */
+    BOAT(strokeIconVector("Boat", "M3 15l2 5h14l2-5z M12 3v12 M12 4l6 9h-6")),
+
+    /** helicopter: M4 12a6 4 0 016-4h4a6 4 0 016 4 4 4 0 01-4 4H8a4 4 0 01-4-4z M3 5h18 M12 5v3 M20 11h3 M6 19h12 M9 16v3 M15 16v3 */
+    HELICOPTER(
+        strokeIconVector(
+            "Helicopter",
+            "M4 12a6 4 0 016-4h4a6 4 0 016 4 4 4 0 01-4 4H8a4 4 0 01-4-4z M3 5h18 M12 5v3 M20 11h3 M6 19h12 M9 16v3 M15 16v3",
+        ),
+    ),
+
+    /** plane: M2 14l8-2V6a2 2 0 014 0v6l8 2v2l-8-1.5V19l2 1.5V22l-4-1-4 1v-1.5l2-1.5v-4.5L2 16z */
+    PLANE(
+        strokeIconVector(
+            "Plane",
+            "M2 14l8-2V6a2 2 0 014 0v6l8 2v2l-8-1.5V19l2 1.5V22l-4-1-4 1v-1.5l2-1.5v-4.5L2 16z"
+        )
+    ),
+
+    /** ammo: M5 20v-7a2 2 0 014 0v7z M10 20v-9a2 2 0 014 0v9z M15 20v-7a2 2 0 014 0v7z */
+    AMMO(
+        strokeIconVector(
+            "Ammo",
+            "M5 20v-7a2 2 0 014 0v7z M10 20v-9a2 2 0 014 0v9z M15 20v-7a2 2 0 014 0v7z"
+        )
+    ),
+
+    /** armor: M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z */
+    ARMOR(strokeIconVector("Armor", "M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z")),
+
+    /** box: M4 8l8-4 8 4v8l-8 4-8-4z M4 8l8 4 8-4 M12 12v8 */
+    BOX(strokeIconVector("Box", "M4 8l8-4 8 4v8l-8 4-8-4z M4 8l8 4 8-4 M12 12v8")),
+}
+
+/**
+ * Renders one [IloveViIcon] at [size] (default 24dp) in [tint]. [contentDescription] should stay
+ * `null` (the default) when the icon sits next to a text label that already says the same thing
+ * (Chips, buttons) — it is decorative there; pass the sub-type's name (from string resources, see
+ * `strings.xml`) when the icon is the only identifier for what it represents (a map pin, a
+ * thumbnail with no adjacent label).
+ */
+@Composable
+fun IloveViIcon(
+    icon: IloveViIcon,
+    modifier: Modifier = Modifier,
+    size: Dp = 24.dp,
+    tint: Color = IloveViColors.ink,
+    contentDescription: String? = null,
+) {
+    Icon(
+        imageVector = icon.imageVector,
+        contentDescription = contentDescription,
+        modifier = modifier.size(size),
+        tint = tint,
+    )
 }

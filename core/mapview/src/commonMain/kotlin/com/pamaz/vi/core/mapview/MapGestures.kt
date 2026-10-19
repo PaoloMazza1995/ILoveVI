@@ -110,12 +110,16 @@ private fun Modifier.panZoomFlingGestures(
     }
 }
 
-/** Tap (hit-tests pins first, falls back to [onMapTap]) and double-tap-to-zoom-in, focused on the tapped point. */
+/**
+ * Tap and double-tap-to-zoom-in, focused on the tapped point. A tap hit-tests pins first (they're
+ * always drawn on top, see [PinLayer]), then clusters, falling back to [onMapTap] if neither hits.
+ */
 private fun Modifier.tapGestures(
     state: MapViewerState,
     scheme: TileScheme,
-    pins: () -> List<MapViewerPin>,
+    items: () -> List<MapViewerItem>,
     onPinTap: (String) -> Unit,
+    onClusterTap: (MapViewerCluster) -> Unit,
     onMapTap: (NormalizedPoint) -> Unit,
     coroutineScope: CoroutineScope,
 ): Modifier = pointerInput(state, scheme) {
@@ -127,14 +131,33 @@ private fun Modifier.tapGestures(
             val viewportWidth = state.viewportSize.width.toFloat()
             val viewportHeight = state.viewportSize.height.toFloat()
             val screen = ScreenPoint(offset.x, offset.y)
+            val currentItems = items()
+            val pins = currentItems.mapNotNull { (it as? MapViewerItem.Pin)?.pin }
+            val clusters = currentItems.mapNotNull { (it as? MapViewerItem.Cluster)?.cluster }
+
             val hitPinId = hitTestPin(
-                pins(), screen, scheme, state.center, state.zoom, viewportWidth, viewportHeight,
+                pins, screen, scheme, state.center, state.zoom, viewportWidth, viewportHeight,
                 minTargetPx = minTargetPx,
             )
-            if (hitPinId != null) {
-                onPinTap(hitPinId)
+            val hitClusterId = if (hitPinId == null) {
+                hitTestCluster(
+                    clusters,
+                    screen,
+                    scheme,
+                    state.center,
+                    state.zoom,
+                    viewportWidth,
+                    viewportHeight,
+                    minTargetPx = minTargetPx,
+                )
             } else {
-                onMapTap(
+                null
+            }
+
+            when {
+                hitPinId != null -> onPinTap(hitPinId)
+                hitClusterId != null -> clusters.find { it.id == hitClusterId }?.let(onClusterTap)
+                else -> onMapTap(
                     MapViewport.toNormalized(
                         screen,
                         scheme,
@@ -233,11 +256,12 @@ private fun Modifier.scrollWheelZoomGestures(
 internal fun Modifier.mapViewerGestures(
     state: MapViewerState,
     scheme: TileScheme,
-    pins: () -> List<MapViewerPin>,
+    items: () -> List<MapViewerItem>,
     onPinTap: (String) -> Unit,
+    onClusterTap: (MapViewerCluster) -> Unit,
     onMapTap: (NormalizedPoint) -> Unit,
     coroutineScope: CoroutineScope,
 ): Modifier = this
-    .tapGestures(state, scheme, pins, onPinTap, onMapTap, coroutineScope)
+    .tapGestures(state, scheme, items, onPinTap, onClusterTap, onMapTap, coroutineScope)
     .scrollWheelZoomGestures(state, scheme, coroutineScope)
     .panZoomFlingGestures(state, scheme, coroutineScope)

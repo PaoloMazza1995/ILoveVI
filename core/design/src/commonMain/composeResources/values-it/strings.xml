@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="design_subtype_pistol">Pistola</string>
+    <string name="design_subtype_rifle">Fucile</string>
+    <string name="design_subtype_machine_gun">Mitragliatrice</string>
+    <string name="design_subtype_melee">Corpo a corpo</string>
+    <string name="design_subtype_explosive">Esplosivo</string>
+    <string name="design_subtype_car">Auto</string>
+    <string name="design_subtype_motorcycle">Moto</string>
+    <string name="design_subtype_boat">Barca</string>
+    <string name="design_subtype_helicopter">Elicottero</string>
+    <string name="design_subtype_plane">Aereo</string>
+    <string name="design_subtype_ammo">Munizioni</string>
+    <string name="design_subtype_armor">Armatura</string>
+
+    <string name="design_cluster_badge_content_description">%1$d luoghi, tocca per ingrandire</string>
+</resources>

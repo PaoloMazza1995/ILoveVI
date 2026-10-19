@@ -12,8 +12,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.IntSize
 import com.pamaz.vi.core.model.NormalizedPoint
+import com.pamaz.vi.core.model.map.TileScheme
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlin.math.log2
+import kotlin.math.min
 
 /**
  * Normalized-unit/second velocity below which a fling is considered stopped. Normalized units are
@@ -124,6 +127,59 @@ class MapViewerState internal constructor(
         launch { centerXAnimatable.snapTo(point.x.coerceIn(centerBoundsX)) }
         launch { centerYAnimatable.snapTo(point.y.coerceIn(centerBoundsY)) }
         launch { zoomAnimatable.snapTo(zoom.coerceIn(minZoom, maxZoom)) }
+    }
+
+    /**
+     * Animates [center]/[zoom] so [bounds] (e.g. a tapped [MapViewerCluster.bounds]) fits inside
+     * the viewport, inset by [paddingPx] on every side, clamped to [minZoom]..[maxZoom] — the
+     * "zoom in on this cluster" action a caller wires to `onClusterTap`. [scheme] is read once for
+     * this one calculation, not stored (same reason [MapGeometry.kt]'s pure functions take it as a
+     * parameter instead: this class stays scheme-agnostic, see its own KDoc).
+     *
+     * The target zoom is the largest one at which [bounds] still fits: `fitScale = min(scaleX,
+     * scaleY)` for the two axes, inverted through [TileScheme.scaleAt]'s own `2^(zoom - maxZoom)`
+     * formula. A zero-size [bounds] (a single point) has no finite fit scale on that axis — treated
+     * as "no constraint from this axis" (`Float.POSITIVE_INFINITY`) rather than a division by
+     * zero, so a degenerate bounds still resolves to [maxZoom] via the final `coerceIn` instead of
+     * `NaN`.
+     */
+    suspend fun animateToBounds(
+        scheme: TileScheme,
+        bounds: NormalizedBounds,
+        paddingPx: Float = 0f,
+    ) {
+        val boundsWidthFraction = bounds.maxX - bounds.minX
+        val boundsHeightFraction = bounds.maxY - bounds.minY
+        val availableWidthPx = (viewportSize.width - 2f * paddingPx).coerceAtLeast(1f)
+        val availableHeightPx = (viewportSize.height - 2f * paddingPx).coerceAtLeast(1f)
+
+        val scaleX = if (boundsWidthFraction > 0f) {
+            availableWidthPx / (boundsWidthFraction * scheme.widthPx)
+        } else {
+            Float.POSITIVE_INFINITY
+        }
+        val scaleY = if (boundsHeightFraction > 0f) {
+            availableHeightPx / (boundsHeightFraction * scheme.heightPx)
+        } else {
+            Float.POSITIVE_INFINITY
+        }
+        val fitScale = min(scaleX, scaleY)
+        val targetZoom =
+            (log2(fitScale.toDouble()).toFloat() + scheme.maxZoom).coerceIn(minZoom, maxZoom)
+
+        val targetCenter = NormalizedPoint(
+            (bounds.minX + bounds.maxX) / 2f,
+            (bounds.minY + bounds.maxY) / 2f,
+        )
+        val finalScale = scheme.scaleAt(targetZoom)
+        val boundsX = centerBoundsForAxis(
+            (scheme.widthPx * finalScale).toFloat(), viewportSize.width.toFloat(),
+        )
+        val boundsY = centerBoundsForAxis(
+            (scheme.heightPx * finalScale).toFloat(), viewportSize.height.toFloat(),
+        )
+
+        animateTo(targetCenter, targetZoom, boundsX, boundsY)
     }
 
     /** Stops any in-flight fling/animation on the center axes — used when a new gesture begins. */

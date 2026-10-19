@@ -135,7 +135,7 @@ private fun IloveViCompactCardPreview() {
             subtitle = "Weapons · Vinewood",
             category = IloveViCategory.Weapons,
             modifier = Modifier.width(300.dp),
-            icon = { tint -> IconWeaponCrosshair(tint = tint, size = 24.dp) },
+            icon = { tint -> IloveViIcon(icon = IloveViIcon.PISTOL, tint = tint, size = 24.dp) },
         )
     }
 }

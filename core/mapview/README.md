@@ -13,12 +13,12 @@ This step (5A) only builds the module itself; wiring it into either consumer is 
 ## Dependencies
 
 `:core:model` (tile/viewport math, `MapConfig`/`NormalizedPoint`/`EntryCategory`), `:core:design`
-(`IloveViMapPin`, colors, shapes, typography — no new colors/fonts/spacing are introduced here) and
-Coil 3 (`coil-compose` only; the network engine comes transitively from whichever app module
-eventually depends on `:core:design`, which already supplies it per-platform). Deliberately **not**
-a dependency: any database, network-repository or `feature:*` module — this module only knows about
-`MapConfig`, `NormalizedPoint` and the viewer's own `MapViewerPin`, never about entries,
-repositories or sync.
+(`IloveViMapPin`, `IloveViClusterBadge`, colors, shapes, typography — no new colors/fonts/spacing
+are introduced here) and Coil 3 (`coil-compose` only; the network engine comes transitively from
+whichever app module eventually depends on `:core:design`, which already supplies it per-platform).
+Deliberately **not** a dependency: any database, network-repository or `feature:*` module — this
+module only knows about `MapConfig`, `NormalizedPoint` and its own `MapViewerPin`/
+`MapViewerCluster`, never about entries, repositories or sync.
 
 ## Public API
 
@@ -26,26 +26,61 @@ repositories or sync.
   camera (center/zoom/viewport size). `minZoom`/`maxZoom` are plain `Float`s rather than a
   `MapConfig`, so the state and its zoom-clamping behavior can be unit tested without constructing
   one; in practice they come straight from `config.minZoom.toFloat()`/`config.maxZoom.toFloat()`.
-  `state.animateTo(point, zoom)` eases to a target over 300ms; `state.viewportSize` is updated by
-  `MapViewer` itself on every layout pass.
-- `MapViewer(state, config, pins, selectedPinId, onPinTap, onMapTap, modifier, pinContent)` — the
-  viewer. `pinContent` is the clustering hook (see below); everything else matches the spec as
-  given.
-- `MapViewerPin(id, position, category, label)` — what `MapViewer` draws. Not
+  `state.animateTo(point, zoom)` eases to a target over 300ms; `state.animateToBounds(scheme,
+  bounds, paddingPx)` picks whichever zoom makes a `NormalizedBounds` fit the viewport (clamped to
+  `minZoom`/`maxZoom`) and eases there — see "Cluster support" below. `state.viewportSize` is
+  updated by `MapViewer` itself on every layout pass.
+- `MapViewer(state, content, items, selectedPinId, onPinTap, onClusterTap, onMapTap, modifier,
+  pinContent)` — the viewer. `items: List<MapViewerItem>` mixes pins and clusters freely; a thin
+  `pins: List<MapViewerPin>` overload (no clusters) still exists for every caller that doesn't have
+  any, and a `config: MapConfig` overload on top of that for tile-mode callers — see "Cluster
+  support" below for why there are three overloads, not one.
+- `MapViewerPin(id, position, category, label)` — what `MapViewer` draws for a single marker. Not
   `com.pamaz.vi.core.model.MapPin`: it carries no `EntryRef`, database id shape, `mapVersion` or
   `updatedAt`, only what's needed to draw and hit-test a dot. Callers map their own domain types
   into this shape.
+- `MapViewerCluster(id, position, count, dominantCategory, bounds)` — what `MapViewer` draws for a
+  group of merged pins. `dominantCategory` is `null` for a mixed-category cluster (drawn in
+  `IloveViClusterBadge`'s neutral brand color); `bounds: NormalizedBounds` is the normalized
+  rectangle the merged pins span, consumed by `animateToBounds`.
+- `MapViewerItem` — `sealed interface { Pin(pin), Cluster(cluster) }`, what `items` is a list of.
 
-### The clustering hook
+## Cluster support
 
-`feature:map` owns all clustering logic; this module has no cluster concept at all. The hook is
-`pinContent: @Composable (pin: MapViewerPin, selected: Boolean) -> Unit`: a caller that has merged
-several real pins into one visual cluster hands this viewer a single `MapViewerPin` per cluster (a
-representative position, a category — or a neutral one for a mixed-category cluster — and a
-`label` like `"12"`) through the same `pins: List<MapViewerPin>`, then supplies a `pinContent`
-override that draws a bubble-with-count instead of the default single-pin look for those ids. The
-default `pinContent` (`IloveViMapPin` + an optional label pill) handles ordinary, non-clustered
-pins.
+This module draws and hit-tests clusters; it has **no clustering logic** — which pins merge, at
+which zoom, by what distance threshold, is entirely `feature:map`'s decision (step 11, not started
+yet). `feature:map` hands this viewer the result as a `List<MapViewerItem>`: a `MapViewerItem.Pin`
+for every pin that zoom/viewport didn't merge, a `MapViewerItem.Cluster` for every group it did.
+
+- **Drawing**: pins and clusters share one `PinLayer` canvas/overlay, positioned in screen space by
+  the exact same `MapViewport.toScreen` conversion either way (see "Pins and clusters" below).
+  Clusters are always drawn with `:core:designsystem`'s `IloveViClusterBadge` (count capped at
+  `"99+"`, `IloveViColors.brandPurple` when `dominantCategory` is `null`) — not customizable via
+  `pinContent` or an equivalent hook, since nothing has asked for that yet. **Draw order**: every
+  cluster first, then every non-selected pin, then the selected pin last, so the selected pin is
+  always on top of any cluster (and of every other pin) regardless of `items`' own order.
+- **Hit testing**: `hitTestCluster` mirrors `hitTestPin` exactly (same 44dp floor, same "topmost
+  wins on overlap" rule) — a tap checks pins first (they're always drawn on top), then clusters,
+  then falls back to `onMapTap`. `IloveViClusterBadge` already bundles its own 44dp hit target,
+  click handling and semantics content description (`"{count} places, tap to zoom in"`, English +
+  Italian) internally, unlike `IloveViMapPin` which is purely visual — `PinLayer` only has to
+  position it, not wrap it in a second clickable/semantics layer.
+- **"Zoom in on this cluster"**: `onClusterTap` only *reports* the tap, same as `onPinTap`/
+  `onMapTap` — the viewer doesn't react on its own. `MapViewerState.animateToBounds(scheme, cluster
+  .bounds, paddingPx)` is the reusable helper a caller wires to `onClusterTap` to actually zoom in:
+  it picks the largest zoom at which `bounds` still fits the viewport (inset by `paddingPx`),
+  clamped to `minZoom`/`maxZoom`, and eases there via the same `animateTo` pan/pinch already uses.
+  `scheme` is a parameter, not stored — same reason `MapGeometry.kt`'s pure functions take it as a
+  parameter: `MapViewerState` stays scheme-agnostic (see its own KDoc).
+- **Three `MapViewer` overloads, not one**: the real implementation takes
+  `items: List<MapViewerItem>`; a `pins: List<MapViewerPin>` overload wraps each into
+  `MapViewerItem.Pin` and forwards, so every existing all-pins caller and preview keeps compiling
+  with no changes; the pre-existing
+  `config: MapConfig` overload forwards to that one, unchanged. (These don't collide on the JVM/
+  Android targets despite `List<MapViewerPin>`/`List<MapViewerItem>` erasing to the same raw `List`
+  type, because the `items` overload also has two more parameters — `onClusterTap`, no `pinContent`
+  equivalent needed for clusters — so its generated JVM signature has a different arity regardless
+  of the shared prefix's erasure.)
 
 ## Behavior notes
 
@@ -56,11 +91,12 @@ pins.
   shows the placeholder underneath, never anything broken, and one failed tile can't affect any
   other tile. Coil3's default memory+disk cache is keyed by the request's URL, which already encodes
   map version/zoom/tile coordinates, so no custom cache key was needed.
-- **Pins**: one overlay layer, each pin offset from its `NormalizedPoint` via the exact same
-  `MapViewport.toScreen` conversion the tile layer's math is built on — pins and tiles can never
-  drift apart at any zoom, since both derive from the same `TileScheme`/center/zoom. Pins outside
-  the viewport (plus a margin) aren't composed at all, which is most of what keeps 1000+ pins smooth
-  (see "What was and wasn't verified" below).
+- **Pins and clusters**: one overlay layer (`PinLayer`), each pin/cluster offset from its
+  `NormalizedPoint` via the exact same `MapViewport.toScreen` conversion the tile layer's math is
+  built on — pins, clusters and tiles can never drift apart at any zoom, since all three derive from
+  the same `TileScheme`/center/zoom. Items outside the viewport (plus a margin) aren't composed at
+  all, which is most of what keeps 1000+ pins smooth (see "What was and wasn't verified" below) —
+  see "Cluster support" above for drawing/hit-testing details specific to clusters.
 - **Gestures**: pan + pinch-zoom + fling live in one custom gesture loop (not the stock
   `detectTransformGestures`) so a real pointer-timestamp-fed `VelocityTracker` can drive the fling;
   tap/double-tap use the standard `detectTapGestures`; scroll-wheel zoom is a third, independent
@@ -72,7 +108,9 @@ pins.
 - **Accessibility**: the viewer root has a content description explaining the gestures; every pin
   has a merged semantics node with a content description (`"<label or category>, <category>"`)
   and a semantics `onClick` action (not a competing `clickable`), so assistive tech can both read
-  and activate a pin without a second gesture detector fighting the main one for touch events.
+  and activate a pin without a second gesture detector fighting the main one for touch events. Every
+  cluster gets the same treatment for free from `IloveViClusterBadge` itself (content description
+  `"{count} places, tap to zoom in"`, English + Italian, plus its own `onClick`).
 
 ## What was and wasn't verified here
 
@@ -81,12 +119,14 @@ Compose Desktop harness in this repo, and therefore no way to actually render th
 real frame time from here. What *was* verified:
 
 - The module builds on every configured target (JVM, Android, iOS).
-- All logic that doesn't require real rendering — zoom clamping, `animateTo` (driven
-  deterministically via a manually-ticked `BroadcastFrameClock`, since `Animatable` needs a real
-  frame clock), focal-point zoom math (verified by round-tripping through `MapViewport` and
-  asserting the focal point lands back under the same screen position), pin hit-testing at multiple
-  zoom levels and on overlap, and that a pin's screen position is literally `MapViewport.toScreen`'s
-  output — is unit tested in `commonTest`.
+- All logic that doesn't require real rendering — zoom clamping, `animateTo`/`animateToBounds`
+  (driven deterministically via a manually-ticked `BroadcastFrameClock`, since `Animatable` needs a
+  real frame clock), focal-point zoom math (verified by round-tripping through `MapViewport` and
+  asserting the focal point lands back under the same screen position), pin *and cluster*
+  hit-testing at multiple zoom levels and on overlap, that a pin's/cluster's screen position is
+  literally `MapViewport.toScreen`'s output, and that `animateToBounds` always lands within
+  `minZoom`..`maxZoom` (including the two edge cases: a degenerate single-point bounds, and a bounds
+  whose natural fit zoom would fall below `minZoom`) — is unit tested in `commonTest`.
 - A synthetic 1000-pin benchmark (`MapViewerPerfTest`) measuring the *pure computation* cost of one
   frame's tile+pin math (no rendering): **~0.11ms/frame average on the JVM**, far under a 16ms/60fps
   budget. This proves the math scales fine; it is explicitly **not** a measured on-device rendered
@@ -95,8 +135,11 @@ real frame time from here. What *was* verified:
 **Still to confirm on a real device/emulator before shipping**: actual rendered frame times while
 panning/pinching with 1000 pins; that the three independent gesture `pointerInput` blocks
 (pan/pinch/ fling, tap/double-tap, scroll-wheel) don't fight each other in practice on a real
-touchscreen; Coil3's disk cache behavior on-device; and the `MapViewerWithOneThousandPinsPreview` /
-placeholder-tile previews rendering correctly in Android Studio / Xcode preview.
+touchscreen; Coil3's disk cache behavior on-device; the `MapViewerWithOneThousandPinsPreview` /
+placeholder-tile previews rendering correctly in Android Studio / Xcode preview; and (new with
+cluster support) `MapViewerWithPinsAndClustersPreview` actually showing pins and badges together on
+a real screen, that tapping a cluster badge visibly zooms in via `animateToBounds`, and that the
+"selected pin always on top of a cluster" draw order looks right when they visually overlap.
 
 ## Used by the app module (step 8)
 

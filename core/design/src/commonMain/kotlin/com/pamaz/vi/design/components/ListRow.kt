@@ -18,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -134,7 +133,13 @@ private fun IloveViListRowCatalogPreview() {
             subtitle = "Weapons · Vinewood",
             trailing = IloveViListRowTrailing.Chevron,
             onClick = {},
-            thumbnail = { IconWeaponCrosshair(tint = IloveViColors.brandPink, size = 26.dp) },
+            thumbnail = {
+                IloveViIcon(
+                    icon = IloveViIcon.PISTOL,
+                    tint = IloveViColors.brandPink,
+                    size = 26.dp
+                )
+            },
         )
     }
 }

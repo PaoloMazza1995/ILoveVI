@@ -4,9 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,18 +31,19 @@ import com.pamaz.vi.design.IloveViColors
 import com.pamaz.vi.design.IloveViNewsTopic
 import com.pamaz.vi.design.IloveViSpacing
 import com.pamaz.vi.design.IloveViTheme
-import com.pamaz.vi.design.components.IconCheck
 import com.pamaz.vi.design.components.IconArrowBack
+import com.pamaz.vi.design.components.IconCheck
 import com.pamaz.vi.design.components.IconMusicNote
-import com.pamaz.vi.design.components.IconWeaponCrosshair
 import com.pamaz.vi.design.components.IconZoomIn
 import com.pamaz.vi.design.components.IloveViButton
 import com.pamaz.vi.design.components.IloveViButtonVariant
 import com.pamaz.vi.design.components.IloveViCategoryBadge
 import com.pamaz.vi.design.components.IloveViChip
 import com.pamaz.vi.design.components.IloveViChipGroup
+import com.pamaz.vi.design.components.IloveViClusterBadge
 import com.pamaz.vi.design.components.IloveViCompactCard
 import com.pamaz.vi.design.components.IloveViFeaturedCard
+import com.pamaz.vi.design.components.IloveViIcon
 import com.pamaz.vi.design.components.IloveViIconButton
 import com.pamaz.vi.design.components.IloveViIconButtonSurface
 import com.pamaz.vi.design.components.IloveViLabeledSwitch
@@ -104,9 +105,42 @@ fun ComponentGalleryScreen() {
                     var vehiclesActive by remember { mutableStateOf(true) }
                     var itemsActive by remember { mutableStateOf(true) }
                     IloveViChipGroup {
-                        IloveViChip(label = "Weapons", active = weaponsActive, onClick = { weaponsActive = !weaponsActive }, category = IloveViCategory.Weapons)
-                        IloveViChip(label = "Vehicles", active = vehiclesActive, onClick = { vehiclesActive = !vehiclesActive }, category = IloveViCategory.Vehicles)
-                        IloveViChip(label = "Items", active = itemsActive, onClick = { itemsActive = !itemsActive }, category = IloveViCategory.Items)
+                        IloveViChip(
+                            label = "Weapons", active = weaponsActive,
+                            onClick = { weaponsActive = !weaponsActive },
+                            category = IloveViCategory.Weapons, icon = IloveViIcon.PISTOL,
+                        )
+                        IloveViChip(
+                            label = "Vehicles", active = vehiclesActive,
+                            onClick = { vehiclesActive = !vehiclesActive },
+                            category = IloveViCategory.Vehicles, icon = IloveViIcon.CAR,
+                        )
+                        IloveViChip(
+                            label = "Items", active = itemsActive,
+                            onClick = { itemsActive = !itemsActive },
+                            category = IloveViCategory.Items, icon = IloveViIcon.BOX,
+                        )
+                    }
+                    // Filters sub-type chips: sub-type icon before the label.
+                    IloveViChipGroup {
+                        IloveViChip(
+                            label = "Rifle",
+                            active = false,
+                            onClick = {},
+                            icon = IloveViIcon.RIFLE
+                        )
+                        IloveViChip(
+                            label = "Motorcycle",
+                            active = false,
+                            onClick = {},
+                            icon = IloveViIcon.MOTORCYCLE
+                        )
+                        IloveViChip(
+                            label = "Armor",
+                            active = false,
+                            onClick = {},
+                            icon = IloveViIcon.ARMOR
+                        )
                     }
                 }
 
@@ -121,7 +155,13 @@ fun ComponentGalleryScreen() {
                             title = "Equipped pistol",
                             subtitle = "Weapons · Vinewood",
                             onClick = {},
-                            thumbnail = { IconWeaponCrosshair(tint = IloveViColors.brandPink, size = 26.dp) },
+                            thumbnail = {
+                                IloveViIcon(
+                                    icon = IloveViIcon.PISTOL,
+                                    tint = IloveViColors.brandPink,
+                                    size = 26.dp
+                                )
+                            },
                         )
                         IloveViListRow(
                             title = "In the Wind",
@@ -153,7 +193,13 @@ fun ComponentGalleryScreen() {
                         subtitle = "Weapons · Vinewood",
                         category = IloveViCategory.Weapons,
                         modifier = Modifier.fillMaxWidth(),
-                        icon = { tint -> IconWeaponCrosshair(tint = tint, size = 24.dp) },
+                        icon = { tint ->
+                            IloveViIcon(
+                                icon = IloveViIcon.PISTOL,
+                                tint = tint,
+                                size = 24.dp
+                            )
+                        },
                     )
                 }
 
@@ -205,6 +251,89 @@ fun ComponentGalleryScreen() {
                         IloveViMapPin(category = IloveViMapPinCategory.Vehicle)
                         IloveViMapPin(category = IloveViMapPinCategory.Item)
                         IloveViMapPin(category = IloveViMapPinCategory.Weapon, selected = true)
+                        IloveViMapPin(
+                            category = IloveViMapPinCategory.Weapon,
+                            icon = IloveViIcon.RIFLE
+                        )
+                    }
+                }
+
+                GallerySection("Icons") {
+                    Column(verticalArrangement = Arrangement.spacedBy(IloveViSpacing.space3)) {
+                        // The 5 Weapons sub-type icons, in the Weapons category color.
+                        Row(horizontalArrangement = Arrangement.spacedBy(IloveViSpacing.space3)) {
+                            listOf(
+                                IloveViIcon.PISTOL, IloveViIcon.RIFLE, IloveViIcon.MACHINE_GUN,
+                                IloveViIcon.MELEE, IloveViIcon.EXPLOSIVE,
+                            ).forEach {
+                                IloveViIcon(
+                                    icon = it,
+                                    tint = IloveViColors.brandPink,
+                                    size = 28.dp
+                                )
+                            }
+                        }
+                        // The 5 Vehicles sub-type icons, in the Vehicles category color.
+                        Row(horizontalArrangement = Arrangement.spacedBy(IloveViSpacing.space3)) {
+                            listOf(
+                                IloveViIcon.CAR, IloveViIcon.MOTORCYCLE, IloveViIcon.BOAT,
+                                IloveViIcon.HELICOPTER, IloveViIcon.PLANE,
+                            ).forEach {
+                                IloveViIcon(
+                                    icon = it,
+                                    tint = IloveViColors.brandOrange,
+                                    size = 28.dp
+                                )
+                            }
+                        }
+                        // The 2 Items sub-type icons + the generic Items category icon, in teal.
+                        Row(horizontalArrangement = Arrangement.spacedBy(IloveViSpacing.space3)) {
+                            listOf(IloveViIcon.AMMO, IloveViIcon.ARMOR, IloveViIcon.BOX).forEach {
+                                IloveViIcon(icon = it, tint = IloveViColors.brandTeal, size = 28.dp)
+                            }
+                        }
+                        // All 13, on the bg-800 surface (the neutral background every icon is
+                        // actually drawn on outside a category-colored pin/chip).
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(IloveViColors.bg800)
+                                .padding(IloveViSpacing.space3),
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(IloveViSpacing.space2)) {
+                                IloveViIcon.entries.forEach { icon ->
+                                    IloveViIcon(icon = icon, tint = IloveViColors.ink, size = 22.dp)
+                                }
+                            }
+                        }
+                        // As a pin: the only concrete case in this gallery where the icon is the
+                        // sole identifier for what it shows (no adjacent text label), so it gets a
+                        // real contentDescription instead of null — see IloveViIcon's KDoc.
+                        IloveViMapPin(
+                            category = IloveViMapPinCategory.Weapon,
+                            icon = IloveViIcon.RIFLE
+                        )
+                    }
+                }
+
+                GallerySection("ClusterBadge") {
+                    Column(verticalArrangement = Arrangement.spacedBy(IloveViSpacing.space3)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(IloveViSpacing.space3)) {
+                            IloveViClusterBadge(
+                                count = 11,
+                                category = IloveViCategory.Weapons,
+                                onClick = {})
+                            IloveViClusterBadge(
+                                count = 42,
+                                category = IloveViCategory.Vehicles,
+                                onClick = {})
+                            IloveViClusterBadge(
+                                count = 99,
+                                category = IloveViCategory.Items,
+                                onClick = {})
+                            IloveViClusterBadge(count = 120, category = null, onClick = {})
+                        }
                     }
                 }
             }

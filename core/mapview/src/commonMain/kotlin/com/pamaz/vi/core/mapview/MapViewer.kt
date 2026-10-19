@@ -22,8 +22,8 @@ import com.pamaz.vi.core.model.map.TileScheme
 /**
  * The shared, read-only map viewer used by both the placement tool and `feature:map` — this is
  * the one reason this module exists outside the roadmap's module list (see `README.md`). It knows
- * about [content], pins and gestures only: no repositories, no network, no database, and (per the
- * product's "no user position" rule) no concept of a current/player location at all.
+ * about [content], [items] and gestures only: no repositories, no network, no database, and (per
+ * the product's "no user position" rule) no concept of a current/player location at all.
  *
  * [content] is either a remote tile pyramid ([MapContent.Tiles]) or one bundled/local image with
  * no tiling/network/backend ([MapContent.SingleImage], step 5A-bis) — see [MapContent]'s KDoc.
@@ -32,10 +32,13 @@ import com.pamaz.vi.core.model.map.TileScheme
  * call (not stored in [state]) so swapping it — a new map version, or switching modes entirely —
  * just works; [state]'s zoom range is kept in sync via a [LaunchedEffect].
  *
- * [pinContent] is the clustering hook: `feature:map` owns all clustering logic, and hands this
- * viewer one [MapViewerPin] per visible cluster (see [MapViewerPin]'s KDoc) plus a [pinContent]
- * override that draws cluster bubbles differently from single pins — this composable itself has
- * no clustering concept.
+ * [items] mixes [MapViewerPin]s and [MapViewerCluster]s freely (see [MapViewerItem]'s KDoc):
+ * `feature:map` owns all clustering logic (which pins merge, at which zoom) and simply hands this
+ * viewer the result — this composable itself has no clustering concept, only how to draw and
+ * hit-test what it's given. [pinContent] customizes a single pin's look; clusters are always drawn
+ * with `:core:designsystem`'s `IloveViClusterBadge` (not customizable here, since nothing asked
+ * for that yet). A tapped cluster reports [onClusterTap]; [MapViewerState.animateToBounds] is the
+ * usual way a caller reacts to it ("zoom in to show every pin this cluster was standing in for").
  *
  * [MapContent.Tiles] assumes 256px tiles (matching [TileScheme]'s default and `:tools:tilegen`'s
  * output) since [MapConfig] doesn't carry a tile size today.
@@ -44,9 +47,10 @@ import com.pamaz.vi.core.model.map.TileScheme
 fun MapViewer(
     state: MapViewerState,
     content: MapContent,
-    pins: List<MapViewerPin>,
+    items: List<MapViewerItem>,
     selectedPinId: String? = null,
     onPinTap: (String) -> Unit = {},
+    onClusterTap: (MapViewerCluster) -> Unit = {},
     onMapTap: (NormalizedPoint) -> Unit = {},
     modifier: Modifier = Modifier,
     pinContent: @Composable (pin: MapViewerPin, selected: Boolean) -> Unit = { pin, selected ->
@@ -99,11 +103,12 @@ fun MapViewer(
     }
 
     val coroutineScope = rememberCoroutineScope()
-    // pins/callbacks can change on every recomposition; read the latest value through these
+    // items/callbacks can change on every recomposition; read the latest value through these
     // instead of keying the gesture pointerInput on them, so an in-progress drag/pinch is never
     // interrupted by an unrelated recomposition (e.g. a pin's label changing elsewhere).
-    val latestPins by rememberUpdatedState(pins)
+    val latestItems by rememberUpdatedState(items)
     val latestOnPinTap by rememberUpdatedState(onPinTap)
+    val latestOnClusterTap by rememberUpdatedState(onClusterTap)
     val latestOnMapTap by rememberUpdatedState(onMapTap)
 
     Box(
@@ -114,8 +119,9 @@ fun MapViewer(
             .mapViewerGestures(
                 state = state,
                 scheme = scheme,
-                pins = { latestPins },
+                items = { latestItems },
                 onPinTap = { id -> latestOnPinTap(id) },
+                onClusterTap = { cluster -> latestOnClusterTap(cluster) },
                 onMapTap = { point -> latestOnMapTap(point) },
                 coroutineScope = coroutineScope,
             )
@@ -133,20 +139,49 @@ fun MapViewer(
                 SingleImageLayer(image = content.image, scheme = scheme, state = state)
         }
         PinLayer(
-            pins = pins,
+            items = items,
             scheme = scheme,
             state = state,
             selectedPinId = selectedPinId,
             onPinTap = onPinTap,
+            onClusterTap = onClusterTap,
             pinContent = pinContent,
         )
     }
 }
 
 /**
+ * Thin, non-breaking overload for every existing caller that only has [MapViewerPin]s, no
+ * clusters: wraps each into [MapViewerItem.Pin] and forwards to the [items]-based [MapViewer]
+ * above. No behavior change for an all-pins caller — see that overload's KDoc.
+ */
+@Composable
+fun MapViewer(
+    state: MapViewerState,
+    content: MapContent,
+    pins: List<MapViewerPin>,
+    selectedPinId: String? = null,
+    onPinTap: (String) -> Unit = {},
+    onMapTap: (NormalizedPoint) -> Unit = {},
+    modifier: Modifier = Modifier,
+    pinContent: @Composable (pin: MapViewerPin, selected: Boolean) -> Unit = { pin, selected ->
+        DefaultMapViewerPinContent(pin, selected)
+    },
+) = MapViewer(
+    state = state,
+    content = content,
+    items = pins.map { MapViewerItem.Pin(it) },
+    selectedPinId = selectedPinId,
+    onPinTap = onPinTap,
+    onMapTap = onMapTap,
+    modifier = modifier,
+    pinContent = pinContent,
+)
+
+/**
  * Thin, non-breaking overload for every existing tile-mode caller: wraps [config] into
- * [MapContent.Tiles] and forwards to the [content]-based [MapViewer] above. No behavior change —
- * see that overload's KDoc.
+ * [MapContent.Tiles] and forwards to the pins-based [MapViewer] overload above. No behavior
+ * change — see the [items]-based overload's KDoc.
  */
 @Composable
 fun MapViewer(

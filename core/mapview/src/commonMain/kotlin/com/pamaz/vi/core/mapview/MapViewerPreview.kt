@@ -5,13 +5,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.pamaz.vi.core.model.EntryCategory
 import com.pamaz.vi.core.model.MapConfig
 import com.pamaz.vi.core.model.NormalizedPoint
+import com.pamaz.vi.core.model.map.TileScheme
 import com.pamaz.vi.design.IloveViColors
 import com.pamaz.vi.design.IloveViTheme
+import kotlinx.coroutines.launch
 import kotlin.random.Random
 import kotlin.time.Instant
 
@@ -53,6 +56,38 @@ internal fun fakePins(count: Int, seed: Int = 0): List<MapViewerPin> {
     }
 }
 
+/**
+ * Also used by [MapViewerSampleScreen] — kept `internal` rather than `private` for that reuse.
+ * Three fake clusters, the exact counts step 5A's cluster-support addition calls out (11, 42,
+ * 120), each a different [MapViewerCluster.dominantCategory] (including one mixed/`null`) so the
+ * preview exercises [com.pamaz.vi.design.components.IloveViClusterBadge]'s category/mixed/"99+"
+ * variants together. [MapViewerCluster.bounds] is a small square around [MapViewerCluster.position]
+ * — a real cluster's bounds would be the extent of the pins it merged, which this module has no
+ * knowledge of (`feature:map` owns clustering), so a plausible placeholder span is used here.
+ */
+internal fun fakeClusters(seed: Int = 1): List<MapViewerCluster> {
+    val random = Random(seed)
+    val counts = listOf(11, 42, 120)
+    val dominantCategories = listOf(EntryCategory.WEAPON, EntryCategory.VEHICLE, null)
+    val boundsHalfSpan = 0.05f
+    return counts.mapIndexed { index, count ->
+        val x = random.nextFloat()
+        val y = random.nextFloat()
+        MapViewerCluster(
+            id = "preview-cluster-$index",
+            position = NormalizedPoint(x, y),
+            count = count,
+            dominantCategory = dominantCategories[index % dominantCategories.size],
+            bounds = NormalizedBounds(
+                minX = (x - boundsHalfSpan).coerceIn(0f, 1f),
+                minY = (y - boundsHalfSpan).coerceIn(0f, 1f),
+                maxX = (x + boundsHalfSpan).coerceIn(0f, 1f),
+                maxY = (y + boundsHalfSpan).coerceIn(0f, 1f),
+            ),
+        )
+    }
+}
+
 @Preview
 @Composable
 private fun MapViewerEmptyPreview() {
@@ -84,6 +119,47 @@ private fun MapViewerWithPinsPreview() {
             config = PreviewMapConfig,
             pins = pins,
             selectedPinId = pins.first().id,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+/**
+ * Pins and clusters together (step 5A's cluster-support addition) — [fakeClusters]' 11/42/120
+ * counts, mixed with ordinary pins, the selected pin drawn over everything. Tapping a cluster
+ * calls [MapViewerState.animateToBounds] with its [MapViewerCluster.bounds], demonstrating the
+ * "zoom in to show every pin it stood for" action a real caller (`feature:map`) would wire the
+ * same way.
+ */
+@Preview
+@Composable
+private fun MapViewerWithPinsAndClustersPreview() {
+    IloveViTheme {
+        val state = rememberMapViewerState(
+            minZoom = PreviewMapConfig.minZoom.toFloat(),
+            maxZoom = PreviewMapConfig.maxZoom.toFloat(),
+        )
+        val scheme = remember { TileScheme(PreviewMapConfig.widthPx, PreviewMapConfig.heightPx) }
+        val pins = remember { fakePins(12) }
+        val clusters = remember { fakeClusters() }
+        val items = remember(pins, clusters) {
+            pins.map { MapViewerItem.Pin(it) } + clusters.map { MapViewerItem.Cluster(it) }
+        }
+        val coroutineScope = rememberCoroutineScope()
+        MapViewer(
+            state = state,
+            content = MapContent.Tiles(PreviewMapConfig),
+            items = items,
+            selectedPinId = pins.first().id,
+            onClusterTap = { cluster ->
+                coroutineScope.launch {
+                    state.animateToBounds(
+                        scheme,
+                        cluster.bounds,
+                        paddingPx = 48f
+                    )
+                }
+            },
             modifier = Modifier.fillMaxSize(),
         )
     }

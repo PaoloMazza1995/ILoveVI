@@ -202,4 +202,75 @@ class MapGeometryTest {
             hitTestPin(pins, expected, scheme, center, zoom, 1200f, 900f, minTargetPx = 1f)
         )
     }
+
+    private fun clusterAt(id: String, point: NormalizedPoint) = MapViewerCluster(
+        id = id,
+        position = point,
+        count = 12,
+        dominantCategory = EntryCategory.WEAPON,
+        bounds = NormalizedBounds(minX = point.x, minY = point.y, maxX = point.x, maxY = point.y),
+    )
+
+    @Test
+    fun hitTestCluster_hitsClusterUnderTap_atSeveralZoomLevels() {
+        val center = NormalizedPoint(0.5f, 0.5f)
+        val clusterPoint = NormalizedPoint(0.5f, 0.5f)
+        val clusters = listOf(clusterAt("c1", clusterPoint))
+
+        for (zoom in scheme.minZoom..scheme.maxZoom) {
+            val screen =
+                MapViewport.toScreen(clusterPoint, scheme, center, zoom.toFloat(), 1000f, 800f)
+            val hit = hitTestCluster(clusters, screen, scheme, center, zoom.toFloat(), 1000f, 800f)
+            assertEquals("c1", hit, "expected a hit at zoom $zoom")
+        }
+    }
+
+    @Test
+    fun hitTestCluster_missesWhenTapIsOutsideTarget() {
+        val center = NormalizedPoint(0.5f, 0.5f)
+        val clusters = listOf(clusterAt("c1", NormalizedPoint(0.5f, 0.5f)))
+        val screen =
+            MapViewport.toScreen(NormalizedPoint(0.5f, 0.5f), scheme, center, 3f, 1000f, 800f)
+
+        val farTap = ScreenPoint(screen.x + 100f, screen.y + 100f)
+        assertNull(hitTestCluster(clusters, farTap, scheme, center, 3f, 1000f, 800f))
+    }
+
+    @Test
+    fun hitTestCluster_onOverlap_lastClusterInListWins() {
+        val center = NormalizedPoint(0.5f, 0.5f)
+        val samePoint = NormalizedPoint(0.5f, 0.5f)
+        val clusters = listOf(clusterAt("bottom", samePoint), clusterAt("top", samePoint))
+        val screen = MapViewport.toScreen(samePoint, scheme, center, 3f, 1000f, 800f)
+
+        assertEquals("top", hitTestCluster(clusters, screen, scheme, center, 3f, 1000f, 800f))
+    }
+
+    @Test
+    fun clusterScreenPosition_equalsMapViewportConversion_atSeveralZooms() {
+        val center = NormalizedPoint(0.42f, 0.17f)
+        val clusterPoint = NormalizedPoint(0.8f, 0.2f)
+        val clusters = listOf(clusterAt("c1", clusterPoint))
+
+        for (zoom in listOf(0f, 1.5f, 3.5f, scheme.maxZoom.toFloat())) {
+            // MapViewerCluster.position is placed on screen with the exact same MapViewport.toScreen
+            // conversion pins use — this is what guarantees a cluster badge and the tile layer
+            // underneath it never drift apart at any zoom, same as pins (see pinScreenPosition_*).
+            val expected = MapViewport.toScreen(clusterPoint, scheme, center, zoom, 1200f, 900f)
+            assertEquals(
+                "c1",
+                hitTestCluster(
+                    clusters,
+                    expected,
+                    scheme,
+                    center,
+                    zoom,
+                    1200f,
+                    900f,
+                    minTargetPx = 1f
+                ),
+                "expected the cluster's screen position to equal MapViewport.toScreen at zoom $zoom",
+            )
+        }
+    }
 }

@@ -10,7 +10,6 @@ insert into public.vehicles (id, name, description, sub_type, zone) values
   ('vehicle-2', '[Vehicle 2]', '[Placeholder description for Vehicle 2.]', 'MOTORCYCLE', '[Zone 3]');
 
 insert into public.items (id, name, description, sub_type, zone) values
-  ('item-1', '[Item 1]', '[Placeholder description for Item 1.]', 'HEALTH', '[Zone 1]'),
   ('item-2', '[Item 2]', '[Placeholder description for Item 2.]', 'ARMOR', '[Zone 2]');
 
 insert into public.map_config (map_version, source_image_url, width_px, height_px, tile_url_template, min_zoom, max_zoom) values
@@ -19,7 +18,7 @@ insert into public.map_config (map_version, source_image_url, width_px, height_p
 insert into public.map_pins (id, category, entry_id, x, y, zone, map_version) values
   ('pin-weapon-1', 'WEAPON', 'weapon-1', 0.25, 0.40, '[Zone 1]', 1),
   ('pin-vehicle-1', 'VEHICLE', 'vehicle-1', 0.55, 0.65, '[Zone 3]', 1),
-  ('pin-item-1', 'ITEM', 'item-1', 0.70, 0.20, '[Zone 2]', 1);
+  ('pin-item-2', 'ITEM', 'item-2', 0.70, 0.20, '[Zone 2]', 1);
 
 insert into public.stations (id, name) values
   ('station-1', '[Station 1]'),

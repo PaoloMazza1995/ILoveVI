@@ -12,11 +12,9 @@ import com.pamaz.vi.core.model.NormalizedPoint
  * needed to draw and hit-test a dot on screen. Callers (`feature:map`) map their domain `MapPin`s
  * into this shape, so the viewer never needs to know about entries, repositories or sync.
  *
- * [id] is also how clustering is hooked in: `feature:map` owns all clustering logic and simply
- * hands this viewer one [MapViewerPin] per cluster (a representative [position], a [category] —
- * or a neutral one for a mixed-category cluster — and a [label] such as `"12"`), then supplies a
- * custom `pinContent` to [MapViewer] to draw cluster bubbles differently from single pins. The
- * viewer itself has no cluster concept at all.
+ * Clustering ([MapViewerCluster]) is a *separate* item kind, not a special [MapViewerPin] — see
+ * [MapViewerItem]'s KDoc for why a caller mixes both freely in one list rather than this type
+ * doubling as both a single marker and a cluster bubble.
  */
 data class MapViewerPin(
     val id: String,

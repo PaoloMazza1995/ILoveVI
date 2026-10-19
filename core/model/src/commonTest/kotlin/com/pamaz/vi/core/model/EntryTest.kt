@@ -39,13 +39,13 @@ class EntryTest {
     fun itemExposesItemCategoryAndStringEntryId() {
         val entry: Entry = Item(
             id = ItemId("i1"),
-            name = "Medkit",
-            description = "Restores health.",
-            subType = ItemType.HEALTH,
+            name = "Ammo Crate",
+            description = "Replenishes ammo.",
+            subType = ItemType.AMMO,
             updatedAt = now,
         )
         assertEquals(EntryCategory.ITEM, entry.category)
         assertEquals("i1", entry.entryId)
-        assertEquals("Restores health.", entry.description)
+        assertEquals("Replenishes ammo.", entry.description)
     }
 }

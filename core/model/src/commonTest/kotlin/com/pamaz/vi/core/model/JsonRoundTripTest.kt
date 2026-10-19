@@ -88,11 +88,11 @@ class JsonRoundTripTest {
         assertRoundTrips(
             Item(
                 id = ItemId("i1"),
-                name = "Medkit",
-                description = "Restores health.",
-                subType = ItemType.HEALTH,
-                zone = "Hospital",
-                imageUrl = "https://example.com/medkit.png",
+                name = "Armor Vest",
+                description = "Restores armor.",
+                subType = ItemType.ARMOR,
+                zone = "Armory",
+                imageUrl = "https://example.com/armor-vest.png",
                 updatedAt = now,
             ),
         )

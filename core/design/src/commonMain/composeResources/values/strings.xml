@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sub-type names (step I icon set): used as an icon's contentDescription when the icon is
+         the only identifier for what it represents (a map pin, a thumbnail with no adjacent
+         text label) — see IloveViIcon's KDoc. Decorative icon usages (next to a text label that
+         already says the same thing) pass contentDescription = null instead, not these. -->
+    <string name="design_subtype_pistol">Pistol</string>
+    <string name="design_subtype_rifle">Rifle</string>
+    <string name="design_subtype_machine_gun">Machine Gun</string>
+    <string name="design_subtype_melee">Melee</string>
+    <string name="design_subtype_explosive">Explosive</string>
+    <string name="design_subtype_car">Car</string>
+    <string name="design_subtype_motorcycle">Motorcycle</string>
+    <string name="design_subtype_boat">Boat</string>
+    <string name="design_subtype_helicopter">Helicopter</string>
+    <string name="design_subtype_plane">Plane</string>
+    <string name="design_subtype_ammo">Ammo</string>
+    <string name="design_subtype_armor">Armor</string>
+
+    <!-- ClusterBadge's contentDescription, %1$d is the real pin count (not the capped "99+" text). -->
+    <string name="design_cluster_badge_content_description">%1$d places, tap to zoom in</string>
+</resources>

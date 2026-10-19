@@ -121,3 +121,34 @@ internal fun hitTestPin(
     }
     return null
 }
+
+/**
+ * Same idea as [hitTestPin], for [MapViewerCluster]s: the topmost [MapViewerCluster.id] whose tap
+ * target (at least [MIN_HIT_TARGET_PX_AT_DENSITY_1X] square, centered on [MapViewerCluster.position]'s
+ * screen position — the same [MapViewport.toScreen] conversion [PinLayer] draws it at) contains
+ * [tapScreen], or `null` if none does. [com.pamaz.vi.design.components.IloveViClusterBadge]'s own
+ * visual size (40dp) is smaller than this 44dp floor; the badge itself already enforces that
+ * minimum for its on-screen tap target, and this function uses the same floor so a pure hit-test
+ * (e.g. in a test, without rendering the real component) agrees with it.
+ */
+internal fun hitTestCluster(
+    clusters: List<MapViewerCluster>,
+    tapScreen: ScreenPoint,
+    scheme: TileScheme,
+    center: NormalizedPoint,
+    zoom: Float,
+    viewportWidthPx: Float,
+    viewportHeightPx: Float,
+    minTargetPx: Float = MIN_HIT_TARGET_PX_AT_DENSITY_1X,
+): String? {
+    val halfTarget = minTargetPx / 2f
+    for (cluster in clusters.asReversed()) {
+        val screen = MapViewport.toScreen(
+            cluster.position, scheme, center, zoom, viewportWidthPx, viewportHeightPx,
+        )
+        val withinX = tapScreen.x in (screen.x - halfTarget)..(screen.x + halfTarget)
+        val withinY = tapScreen.y in (screen.y - halfTarget)..(screen.y + halfTarget)
+        if (withinX && withinY) return cluster.id
+    }
+    return null
+}

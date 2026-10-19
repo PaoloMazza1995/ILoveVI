@@ -8,6 +8,8 @@ plugins {
 kotlin {
     sourceSets {
         commonMain.dependencies {
+            implementation(project(":core:model"))
+
             implementation(libs.compose.ui)
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
@@ -24,6 +26,10 @@ kotlin {
             implementation(libs.coil.ktor)
             implementation(libs.bundles.compottie)
             implementation(libs.jetbrains.material.icons)
+        }
+
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
         }
 
         androidMain.dependencies {

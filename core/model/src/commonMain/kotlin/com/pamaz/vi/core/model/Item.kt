@@ -14,7 +14,7 @@ value class ItemId(val value: String)
  * classification is known.
  */
 @Serializable
-enum class ItemType { HEALTH, AMMO, ARMOR }
+enum class ItemType { AMMO, ARMOR }
 
 /**
  * A pickup item in the catalog/map.
