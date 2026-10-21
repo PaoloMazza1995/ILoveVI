@@ -1,0 +1,12 @@
+-- :tools:map-editor's new staged-pin placement flow (step 5B extension) needs to place several
+-- pins for the same weapon/vehicle/item (e.g. the same item available in several zones), which
+-- the original one-pin-per-entry design (20261011120004_map.sql) forbids outright.
+--
+-- Never edit an already-applied migration: this narrows nothing and removes no data, so unlike
+-- 20261018120001_items_subtype_remove_health.sql there is nothing to migrate first — dropping a
+-- UNIQUE constraint only relaxes what future rows are allowed to look like.
+--
+-- map_pins.id (already the real primary key) becomes the only upsert/idempotency key for pins
+-- from here on; the validate_map_pin_entry trigger (unchanged) still enforces that entry_id must
+-- exist in whichever of weapons/vehicles/items matches category.
+alter table public.map_pins drop constraint map_pins_one_per_entry;

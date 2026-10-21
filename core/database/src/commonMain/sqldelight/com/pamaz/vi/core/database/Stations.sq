@@ -1,0 +1,25 @@
+-- Mirrors :core:model's Station / backend stations table.
+
+CREATE TABLE stationEntity (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    deletedAt INTEGER
+);
+
+selectAll:
+SELECT * FROM stationEntity WHERE deletedAt IS NULL ORDER BY name;
+
+selectById:
+SELECT * FROM stationEntity WHERE id = :id AND deletedAt IS NULL;
+
+upsert:
+INSERT INTO stationEntity(id, name, updatedAt, deletedAt)
+VALUES (:id, :name, :updatedAt, :deletedAt)
+ON CONFLICT(id) DO UPDATE SET
+    name = excluded.name,
+    updatedAt = excluded.updatedAt,
+    deletedAt = excluded.deletedAt;
+
+tombstone:
+UPDATE stationEntity SET deletedAt = :deletedAt, updatedAt = :updatedAt WHERE id = :id;

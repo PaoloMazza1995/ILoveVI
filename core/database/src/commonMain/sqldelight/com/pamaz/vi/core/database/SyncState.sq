@@ -1,0 +1,14 @@
+-- Local-only: tracks the last successful sync timestamp per backend table, for delta-sync.
+
+CREATE TABLE syncStateEntity (
+    tableName TEXT NOT NULL PRIMARY KEY,
+    lastSyncedAt INTEGER NOT NULL
+);
+
+selectByTable:
+SELECT * FROM syncStateEntity WHERE tableName = :tableName;
+
+upsert:
+INSERT INTO syncStateEntity(tableName, lastSyncedAt)
+VALUES (:tableName, :lastSyncedAt)
+ON CONFLICT(tableName) DO UPDATE SET lastSyncedAt = excluded.lastSyncedAt;

@@ -1,0 +1,27 @@
+-- Local-only: user-created song compilations (single compilation supported in v1, see CompilationSongs.sq).
+
+CREATE TABLE compilationEntity (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    spotifyPlaylistId TEXT
+);
+
+selectAll:
+SELECT * FROM compilationEntity ORDER BY createdAt;
+
+selectById:
+SELECT * FROM compilationEntity WHERE id = :id;
+
+insert:
+INSERT INTO compilationEntity(id, name, createdAt, spotifyPlaylistId)
+VALUES (:id, :name, :createdAt, :spotifyPlaylistId);
+
+updateName:
+UPDATE compilationEntity SET name = :name WHERE id = :id;
+
+updateSpotifyPlaylistId:
+UPDATE compilationEntity SET spotifyPlaylistId = :spotifyPlaylistId WHERE id = :id;
+
+delete:
+DELETE FROM compilationEntity WHERE id = :id;

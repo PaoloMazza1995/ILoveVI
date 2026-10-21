@@ -1,0 +1,52 @@
+-- Mirrors :core:model's Weapon / backend/supabase/migrations/20261011120002_weapons_vehicles_items.sql's
+-- weapons table. Dates are epoch milliseconds (see this module's README's "Date storage" section).
+-- searchKey is name+zone, lowercased and accent-folded at write time (TextNormalization.kt) so
+-- search stays case/accent-insensitive without a native ICU/unaccent extension.
+
+CREATE TABLE weaponEntity (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    subType TEXT NOT NULL,
+    zone TEXT,
+    imageUrl TEXT,
+    attributes TEXT NOT NULL,
+    price INTEGER,
+    ammoType TEXT,
+    searchKey TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    deletedAt INTEGER
+);
+
+CREATE INDEX weaponEntity_updatedAt ON weaponEntity(updatedAt);
+CREATE INDEX weaponEntity_searchKey ON weaponEntity(searchKey);
+
+selectAll:
+SELECT * FROM weaponEntity WHERE deletedAt IS NULL ORDER BY name;
+
+selectById:
+SELECT * FROM weaponEntity WHERE id = :id AND deletedAt IS NULL;
+
+search:
+SELECT * FROM weaponEntity
+WHERE deletedAt IS NULL AND searchKey LIKE '%' || :query || '%'
+ORDER BY name;
+
+upsert:
+INSERT INTO weaponEntity(id, name, description, subType, zone, imageUrl, attributes, price, ammoType, searchKey, updatedAt, deletedAt)
+VALUES (:id, :name, :description, :subType, :zone, :imageUrl, :attributes, :price, :ammoType, :searchKey, :updatedAt, :deletedAt)
+ON CONFLICT(id) DO UPDATE SET
+    name = excluded.name,
+    description = excluded.description,
+    subType = excluded.subType,
+    zone = excluded.zone,
+    imageUrl = excluded.imageUrl,
+    attributes = excluded.attributes,
+    price = excluded.price,
+    ammoType = excluded.ammoType,
+    searchKey = excluded.searchKey,
+    updatedAt = excluded.updatedAt,
+    deletedAt = excluded.deletedAt;
+
+tombstone:
+UPDATE weaponEntity SET deletedAt = :deletedAt, updatedAt = :updatedAt WHERE id = :id;

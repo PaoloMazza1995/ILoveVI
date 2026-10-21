@@ -1,0 +1,37 @@
+-- Local-only: ordered songs within a compilation.
+
+CREATE TABLE compilationSongEntity (
+    compilationId TEXT NOT NULL,
+    songId TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY(compilationId, songId),
+    FOREIGN KEY(compilationId) REFERENCES compilationEntity(id),
+    FOREIGN KEY(songId) REFERENCES songEntity(id)
+);
+
+CREATE INDEX compilationSongEntity_compilationId ON compilationSongEntity(compilationId);
+
+songsForCompilation:
+SELECT songEntity.*, stationEntity.*, compilationSongEntity.position AS position
+FROM compilationSongEntity
+JOIN songEntity ON songEntity.id = compilationSongEntity.songId
+JOIN stationEntity ON stationEntity.id = songEntity.stationId
+WHERE compilationSongEntity.compilationId = :compilationId
+ORDER BY compilationSongEntity.position;
+
+maxPosition:
+SELECT MAX(position) FROM compilationSongEntity WHERE compilationId = :compilationId;
+
+addSong:
+INSERT INTO compilationSongEntity(compilationId, songId, position)
+VALUES (:compilationId, :songId, :position);
+
+removeSong:
+DELETE FROM compilationSongEntity WHERE compilationId = :compilationId AND songId = :songId;
+
+updatePosition:
+UPDATE compilationSongEntity SET position = :position
+WHERE compilationId = :compilationId AND songId = :songId;
+
+clearCompilation:
+DELETE FROM compilationSongEntity WHERE compilationId = :compilationId;

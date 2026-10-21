@@ -1,0 +1,52 @@
+-- Mirrors :core:model's NewsItem. This is a device-local cache only (no backend table, see
+-- backend/supabase/migrations/20261011120005_feed_sources.sql) so it has no updatedAt/deletedAt;
+-- fetchedAt tracks when this device pulled it, and rows are hard-deleted by trimToLatest.
+
+CREATE TABLE newsItemEntity (
+    id TEXT NOT NULL PRIMARY KEY,
+    feedId TEXT NOT NULL,
+    title TEXT NOT NULL,
+    link TEXT NOT NULL,
+    publishedAt INTEGER NOT NULL,
+    excerpt TEXT,
+    imageUrl TEXT,
+    topic TEXT NOT NULL,
+    fetchedAt INTEGER NOT NULL
+);
+
+CREATE INDEX newsItemEntity_topic_publishedAt ON newsItemEntity(topic, publishedAt);
+
+selectByTopic:
+SELECT * FROM newsItemEntity
+WHERE topic = :topic
+ORDER BY publishedAt DESC
+LIMIT :limit;
+
+selectById:
+SELECT * FROM newsItemEntity WHERE id = :id;
+
+upsert:
+INSERT INTO newsItemEntity(id, feedId, title, link, publishedAt, excerpt, imageUrl, topic, fetchedAt)
+VALUES (:id, :feedId, :title, :link, :publishedAt, :excerpt, :imageUrl, :topic, :fetchedAt)
+ON CONFLICT(id) DO UPDATE SET
+    feedId = excluded.feedId,
+    title = excluded.title,
+    link = excluded.link,
+    publishedAt = excluded.publishedAt,
+    excerpt = excluded.excerpt,
+    imageUrl = excluded.imageUrl,
+    topic = excluded.topic,
+    fetchedAt = excluded.fetchedAt;
+
+countByTopic:
+SELECT COUNT(*) FROM newsItemEntity WHERE topic = :topic;
+
+deleteOlderThanLatest:
+DELETE FROM newsItemEntity
+WHERE topic = :topic
+AND id NOT IN (
+    SELECT id FROM newsItemEntity
+    WHERE topic = :topic
+    ORDER BY publishedAt DESC
+    LIMIT :keep
+);

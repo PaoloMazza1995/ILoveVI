@@ -1,0 +1,34 @@
+-- Mirrors :core:model's FeedSource / backend feed_sources table.
+
+CREATE TABLE feedSourceEntity (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    enabled INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    deletedAt INTEGER
+);
+
+selectAll:
+SELECT * FROM feedSourceEntity WHERE deletedAt IS NULL;
+
+selectEnabledByTopic:
+SELECT * FROM feedSourceEntity WHERE deletedAt IS NULL AND enabled = 1 AND topic = :topic;
+
+selectById:
+SELECT * FROM feedSourceEntity WHERE id = :id AND deletedAt IS NULL;
+
+upsert:
+INSERT INTO feedSourceEntity(id, name, url, topic, enabled, updatedAt, deletedAt)
+VALUES (:id, :name, :url, :topic, :enabled, :updatedAt, :deletedAt)
+ON CONFLICT(id) DO UPDATE SET
+    name = excluded.name,
+    url = excluded.url,
+    topic = excluded.topic,
+    enabled = excluded.enabled,
+    updatedAt = excluded.updatedAt,
+    deletedAt = excluded.deletedAt;
+
+tombstone:
+UPDATE feedSourceEntity SET deletedAt = :deletedAt, updatedAt = :updatedAt WHERE id = :id;

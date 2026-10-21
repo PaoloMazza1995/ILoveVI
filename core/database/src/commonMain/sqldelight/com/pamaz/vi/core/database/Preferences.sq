@@ -1,0 +1,21 @@
+-- Local-only: single-row table of device/user preferences.
+
+CREATE TABLE preferencesEntity (
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 0),
+    showLabels INTEGER NOT NULL,
+    language TEXT NOT NULL,
+    selectedNewsTopic TEXT,
+    lastContentUpdate INTEGER
+);
+
+select:
+SELECT * FROM preferencesEntity WHERE id = 0;
+
+upsert:
+INSERT INTO preferencesEntity(id, showLabels, language, selectedNewsTopic, lastContentUpdate)
+VALUES (0, :showLabels, :language, :selectedNewsTopic, :lastContentUpdate)
+ON CONFLICT(id) DO UPDATE SET
+    showLabels = excluded.showLabels,
+    language = excluded.language,
+    selectedNewsTopic = excluded.selectedNewsTopic,
+    lastContentUpdate = excluded.lastContentUpdate;

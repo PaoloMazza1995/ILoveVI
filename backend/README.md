@@ -43,14 +43,14 @@ One table per `:core:model` entity that the backend owns. Field names map 1:1 to
 use the same constant spelling as the Kotlin enum (e.g. `MACHINE_GUN`, `WEAPON`, `MISSIONS`), so the
 data layer does not need an enum translation table.
 
-| Table                          | Mirrors                     | Notes                                                                                                                                                                                                                                                                                                             |
-|--------------------------------|-----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `weapons`, `vehicles`, `items` | `Weapon`, `Vehicle`, `Item` | `sub_type` CHECK against each type's enum; `attributes` is `jsonb`; only `weapons` has `price`/`ammo_type`.                                                                                                                                                                                                       |
-| `stations`                     | `Station`                   |                                                                                                                                                                                                                                                                                                                   |
-| `songs`                        | `Song`                      | `station_id` FK to `stations`.                                                                                                                                                                                                                                                                                    |
-| `map_config`                   | `MapConfig`                 | `map_version` is the primary key (not a surrogate `id`), matching `MapConfig.mapVersion`.                                                                                                                                                                                                                         |
-| `map_pins`                     | `MapPin` / `EntryRef`       | `(category, entry_id)` stands in for `EntryRef`; a trigger (`validate_map_pin_entry`) checks `entry_id` exists in whichever of `weapons`/`vehicles`/`items` matches `category`, since a plain foreign key can't target one of three tables conditionally. One pin per `(category, entry_id)` (unique constraint). |
-| `feed_sources`                 | `FeedSource`                | The feed list only — `NewsItem` is a **device-local cache** per the functional analysis data model (section 8) and intentionally has no backend table.                                                                                                                                                            |
+| Table                          | Mirrors                     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                          |
+|--------------------------------|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `weapons`, `vehicles`, `items` | `Weapon`, `Vehicle`, `Item` | `sub_type` CHECK against each type's enum; `attributes` is `jsonb`; only `weapons` has `price`/`ammo_type`.                                                                                                                                                                                                                                                                                                                    |
+| `stations`                     | `Station`                   |                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `songs`                        | `Song`                      | `station_id` FK to `stations`.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `map_config`                   | `MapConfig`                 | `map_version` is the primary key (not a surrogate `id`), matching `MapConfig.mapVersion`.                                                                                                                                                                                                                                                                                                                                      |
+| `map_pins`                     | `MapPin` / `EntryRef`       | `(category, entry_id)` stands in for `EntryRef`; a trigger (`validate_map_pin_entry`) checks `entry_id` exists in whichever of `weapons`/`vehicles`/`items` matches `category`, since a plain foreign key can't target one of three tables conditionally. An entry can have any number of pins (`id` is the real primary/upsert key, not `(category, entry_id)` — see `20261021120001_map_pins_allow_multiple_per_entry.sql`). |
+| `feed_sources`                 | `FeedSource`                | The feed list only — `NewsItem` is a **device-local cache** per the functional analysis data model (section 8) and intentionally has no backend table.                                                                                                                                                                                                                                                                         |
 
 Every table above has:
 
@@ -93,7 +93,9 @@ again, since the claim is baked into the JWT at token-issue time.
 
 Bucket `map-tiles` (created in `20261011120006_storage_map_tiles.sql`): public read, admin-only
 write — holds the original map illustration's tiles (Functional Analysis section 9.4; no official
-game map asset is ever stored here).
+game map asset is ever stored here). Bucket `entry-images` (created in
+`20261021120002_storage_entry_images.sql`, same public-read/admin-write shape): catalog entry images
+uploaded by `:tools:map-editor`'s staged-pin Commit flow (step 5B extension).
 
 ## Delta sync convention
 
@@ -108,6 +110,20 @@ Repeat with the increasing `updated_at`/`limit`/`offset` (or keyset on the last 
 `(updated_at, id)`) until a page returns fewer rows than the limit. A row with `deleted_at` set
 means "remove this row locally," not "ignore this row." Plain PostgREST filters are enough for this;
 no RPC is needed unless a future requirement needs cross-table joins the client can't express.
+
+## Functions (RPCs)
+
+`public.commit_map_edits(payload jsonb) returns jsonb`
+(`20261021120003_commit_map_edits_rpc.sql`) is the first — and so far only — Postgres function
+called via RPC (`postgrest.rpc(...)`) rather than through plain table endpoints. It exists because
+`:tools:map-editor`'s staged-pin Commit flow needs to upsert any number of
+`weapons`/`vehicles`/`items` and `map_pins` rows **atomically** (all or nothing), which plain
+PostgREST calls (one HTTP request per table) can't guarantee. It's deliberately plain `security
+invoker` (the default) — it runs with the caller's own role, so every write inside it still goes
+through the normal table-level admin RLS policies, exactly as if the caller had called them
+directly; it never uses the service-role key. Follow this same shape (a single plpgsql function
+body, which is one implicit transaction) for any future requirement needing several tables written
+together — not a new client-side multi-step "hope nothing fails in between" sequence.
 
 ## Seed data
 
@@ -127,6 +143,9 @@ files or into a real run. Covered:
   (`002_updated_at_and_soft_delete.test.sql`).
 - `map_pins.x = 1.5` is refused; a pin pointing at a missing entry is refused
   (`003_map_pin_constraints.test.sql`).
+- `commit_map_edits`: admin can commit a new entry and its pin together, retrying the same payload
+  creates no duplicates, anonymous is refused, and a bad coordinate fails (and saves nothing from)
+  the whole call (`004_commit_map_edits.test.sql`).
 
 ## Applying to a remote project
 

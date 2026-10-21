@@ -1,0 +1,38 @@
+-- Mirrors :core:model's MapConfig / backend map_config table (one row per published map version).
+
+CREATE TABLE mapConfigEntity (
+    mapVersion INTEGER NOT NULL PRIMARY KEY,
+    sourceImageUrl TEXT NOT NULL,
+    widthPx INTEGER NOT NULL,
+    heightPx INTEGER NOT NULL,
+    tileUrlTemplate TEXT NOT NULL,
+    minZoom INTEGER NOT NULL,
+    maxZoom INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    deletedAt INTEGER
+);
+
+selectCurrent:
+SELECT * FROM mapConfigEntity
+WHERE deletedAt IS NULL
+ORDER BY mapVersion DESC
+LIMIT 1;
+
+selectByVersion:
+SELECT * FROM mapConfigEntity WHERE mapVersion = :mapVersion AND deletedAt IS NULL;
+
+upsert:
+INSERT INTO mapConfigEntity(mapVersion, sourceImageUrl, widthPx, heightPx, tileUrlTemplate, minZoom, maxZoom, updatedAt, deletedAt)
+VALUES (:mapVersion, :sourceImageUrl, :widthPx, :heightPx, :tileUrlTemplate, :minZoom, :maxZoom, :updatedAt, :deletedAt)
+ON CONFLICT(mapVersion) DO UPDATE SET
+    sourceImageUrl = excluded.sourceImageUrl,
+    widthPx = excluded.widthPx,
+    heightPx = excluded.heightPx,
+    tileUrlTemplate = excluded.tileUrlTemplate,
+    minZoom = excluded.minZoom,
+    maxZoom = excluded.maxZoom,
+    updatedAt = excluded.updatedAt,
+    deletedAt = excluded.deletedAt;
+
+tombstone:
+UPDATE mapConfigEntity SET deletedAt = :deletedAt, updatedAt = :updatedAt WHERE mapVersion = :mapVersion;

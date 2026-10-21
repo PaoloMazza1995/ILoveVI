@@ -1,0 +1,60 @@
+-- Mirrors :core:model's Song / backend songs table.
+
+CREATE TABLE songEntity (
+    id TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    artist TEXT NOT NULL,
+    stationId TEXT NOT NULL,
+    spotifyTrackId TEXT,
+    searchKey TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    deletedAt INTEGER,
+    FOREIGN KEY(stationId) REFERENCES stationEntity(id)
+);
+
+CREATE INDEX songEntity_stationId ON songEntity(stationId);
+CREATE INDEX songEntity_searchKey ON songEntity(searchKey);
+
+selectAll:
+SELECT songEntity.*, stationEntity.*
+FROM songEntity
+JOIN stationEntity ON stationEntity.id = songEntity.stationId
+WHERE songEntity.deletedAt IS NULL AND stationEntity.deletedAt IS NULL
+ORDER BY songEntity.title;
+
+selectByStation:
+SELECT songEntity.*, stationEntity.*
+FROM songEntity
+JOIN stationEntity ON stationEntity.id = songEntity.stationId
+WHERE songEntity.deletedAt IS NULL AND stationEntity.deletedAt IS NULL AND songEntity.stationId = :stationId
+ORDER BY songEntity.title;
+
+search:
+SELECT songEntity.*, stationEntity.*
+FROM songEntity
+JOIN stationEntity ON stationEntity.id = songEntity.stationId
+WHERE songEntity.deletedAt IS NULL AND stationEntity.deletedAt IS NULL
+AND (:stationId IS NULL OR songEntity.stationId = :stationId)
+AND (:query IS NULL OR songEntity.searchKey LIKE '%' || :query || '%')
+ORDER BY songEntity.title;
+
+selectById:
+SELECT songEntity.*, stationEntity.*
+FROM songEntity
+JOIN stationEntity ON stationEntity.id = songEntity.stationId
+WHERE songEntity.id = :id AND songEntity.deletedAt IS NULL;
+
+upsert:
+INSERT INTO songEntity(id, title, artist, stationId, spotifyTrackId, searchKey, updatedAt, deletedAt)
+VALUES (:id, :title, :artist, :stationId, :spotifyTrackId, :searchKey, :updatedAt, :deletedAt)
+ON CONFLICT(id) DO UPDATE SET
+    title = excluded.title,
+    artist = excluded.artist,
+    stationId = excluded.stationId,
+    spotifyTrackId = excluded.spotifyTrackId,
+    searchKey = excluded.searchKey,
+    updatedAt = excluded.updatedAt,
+    deletedAt = excluded.deletedAt;
+
+tombstone:
+UPDATE songEntity SET deletedAt = :deletedAt, updatedAt = :updatedAt WHERE id = :id;

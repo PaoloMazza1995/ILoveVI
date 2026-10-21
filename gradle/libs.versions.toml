@@ -27,6 +27,7 @@ kotlinx-coroutines = "1.10.2"
 coil = "3.6.3"
 compottie= "2.0.2"
 kotlinx-serialization = "1.11.0"
+sqldelight = "2.0.2"
 supabase = "3.1.4"
 kotlin-csv = "1.10.0"
 koin = "4.1.1"
@@ -82,8 +83,16 @@ ktor_client_mock = { group = "io.ktor", name = "ktor-client-mock", version.ref =
 supabase_bom = { group = "io.github.jan-tennert.supabase", name = "bom", version.ref = "supabase" }
 supabase_postgrest = { group = "io.github.jan-tennert.supabase", name = "postgrest-kt" }
 supabase_auth = { group = "io.github.jan-tennert.supabase", name = "auth-kt" }
+supabase_storage = { group = "io.github.jan-tennert.supabase", name = "storage-kt" }
 
 kotlin_csv = { group = "com.github.doyaaaaaken", name = "kotlin-csv-jvm", version.ref = "kotlin-csv" }
+
+sqldelight_runtime = { group = "app.cash.sqldelight", name = "runtime", version.ref = "sqldelight" }
+sqldelight_coroutines = { group = "app.cash.sqldelight", name = "coroutines-extensions", version.ref = "sqldelight" }
+sqldelight_android_driver = { group = "app.cash.sqldelight", name = "android-driver", version.ref = "sqldelight" }
+sqldelight_native_driver = { group = "app.cash.sqldelight", name = "native-driver", version.ref = "sqldelight" }
+sqldelight_sqlite_driver = { group = "app.cash.sqldelight", name = "sqlite-driver", version.ref = "sqldelight" }
+sqldelight_dialect = { group = "app.cash.sqldelight", name = "sqlite-3-35-dialect", version.ref = "sqldelight" }
 
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
@@ -110,6 +119,7 @@ koin_coroutines = { group = "io.insert-koin", name = "koin-core-coroutines", ver
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
 androidMultiplatformLibrary = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+sqldelight = { id = "app.cash.sqldelight", version.ref = "sqldelight" }
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

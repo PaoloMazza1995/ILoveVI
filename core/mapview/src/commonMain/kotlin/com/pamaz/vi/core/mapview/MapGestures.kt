@@ -7,6 +7,7 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -232,6 +233,73 @@ private fun Modifier.scrollWheelZoomGestures(
 }
 
 /**
+ * Rectangle (marquee) select for a drag that starts on empty map background — opt-in via
+ * [enabled] (default `false`, zero behavior change) for `:tools:map-editor`'s Select mode (step 5B
+ * extension); every other caller never installs this block at all. Dispatched at
+ * [PointerEventPass.Initial] on the *outer* `Box` in [MapViewer], which Compose runs strictly
+ * before any Main-pass detector below it in the chain — [tapGestures], [panZoomFlingGestures], and
+ * each pin's own per-pin drag `pointerInput` inside [PinLayer] — ever sees the same event. That
+ * lets this block hit-test "did this drag start on a pin" itself ([hitTestPin], the same check
+ * [tapGestures] uses) and bail out immediately (consuming nothing) when it did, so an existing
+ * pin's own drag-to-move/tap keeps working completely unchanged. When it didn't hit a pin and the
+ * pointer actually moves, this block starts consuming — which, via the exact same
+ * already-consumed-change check [tapGestures]/[panZoomFlingGestures] use to cancel *each other*,
+ * correctly suppresses both the tap and the pan/zoom for the rest of this gesture: a plain
+ * click-with-no-movement on the background still falls through to [tapGestures]' own [onMapTap]
+ * untouched, only a real drag is redirected to [onDragStart]/[onDrag]/[onDragEnd].
+ *
+ * Panning by plain background drag is therefore unavailable while [enabled] — `:tools:map-editor`
+ * accepts this trade-off for Select mode (scroll-wheel/double-tap zoom and Place mode's drag-pan
+ * both still work); see that module's README.
+ */
+private fun Modifier.backgroundDragSelectGestures(
+    enabled: Boolean,
+    state: MapViewerState,
+    scheme: TileScheme,
+    items: () -> List<MapViewerItem>,
+    onDragStart: (NormalizedPoint) -> Unit,
+    onDrag: (NormalizedPoint) -> Unit,
+    onDragEnd: () -> Unit,
+): Modifier {
+    if (!enabled) return this
+    return pointerInput(state, scheme) {
+        val minTargetPx = 44.dp.toPx()
+        awaitEachGesture {
+            val firstChange = awaitPointerEvent(PointerEventPass.Initial).changes.first()
+            val viewportWidth = state.viewportSize.width.toFloat()
+            val viewportHeight = state.viewportSize.height.toFloat()
+            val pins = items().mapNotNull { (it as? MapViewerItem.Pin)?.pin }
+            val hitPinId = hitTestPin(
+                pins,
+                ScreenPoint(firstChange.position.x, firstChange.position.y),
+                scheme, state.center, state.zoom, viewportWidth, viewportHeight,
+                minTargetPx = minTargetPx,
+            )
+            if (hitPinId != null) return@awaitEachGesture
+
+            var dragStarted = false
+            var event = awaitPointerEvent(PointerEventPass.Initial)
+            while (event.changes.any { it.pressed }) {
+                val change = event.changes.first()
+                val point = MapViewport.toNormalized(
+                    ScreenPoint(change.position.x, change.position.y),
+                    scheme, state.center, state.zoom, viewportWidth, viewportHeight,
+                )
+                if (!dragStarted) {
+                    dragStarted = true
+                    onDragStart(point)
+                } else {
+                    onDrag(point)
+                }
+                event.changes.forEach { it.consume() }
+                event = awaitPointerEvent(PointerEventPass.Initial)
+            }
+            if (dragStarted) onDragEnd()
+        }
+    }
+}
+
+/**
  * Installs every [MapViewer] gesture: pan, pinch-zoom, fling, double-tap-zoom, tap (pin hit-test
  * then [onMapTap]) and desktop scroll-wheel zoom. Split into three [Modifier.pointerInput] blocks
  * (transform+fling, tap+double-tap, scroll) rather than one, so none of them has to re-implement
@@ -261,7 +329,15 @@ internal fun Modifier.mapViewerGestures(
     onClusterTap: (MapViewerCluster) -> Unit,
     onMapTap: (NormalizedPoint) -> Unit,
     coroutineScope: CoroutineScope,
+    backgroundDragSelectEnabled: Boolean = false,
+    onBackgroundDragStart: (NormalizedPoint) -> Unit = {},
+    onBackgroundDrag: (NormalizedPoint) -> Unit = {},
+    onBackgroundDragEnd: () -> Unit = {},
 ): Modifier = this
+    .backgroundDragSelectGestures(
+        backgroundDragSelectEnabled, state, scheme, items,
+        onBackgroundDragStart, onBackgroundDrag, onBackgroundDragEnd,
+    )
     .tapGestures(state, scheme, items, onPinTap, onClusterTap, onMapTap, coroutineScope)
     .scrollWheelZoomGestures(state, scheme, coroutineScope)
     .panZoomFlingGestures(state, scheme, coroutineScope)

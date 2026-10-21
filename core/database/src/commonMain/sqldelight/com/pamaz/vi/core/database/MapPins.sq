@@ -1,0 +1,89 @@
+-- Mirrors :core:model's MapPin / backend map_pins table. category is one of WEAPON, VEHICLE, ITEM
+-- (see com.pamaz.vi.core.model.EntryCategory); entryId points at the matching entity table's id.
+-- Since the joined "entry" table depends on category, this file exposes one join query per
+-- category rather than a single polymorphic join; the DAO combines results per the requested categories.
+
+CREATE TABLE mapPinEntity (
+    id TEXT NOT NULL PRIMARY KEY,
+    category TEXT NOT NULL,
+    entryId TEXT NOT NULL,
+    x REAL NOT NULL,
+    y REAL NOT NULL,
+    zone TEXT,
+    mapVersion INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    deletedAt INTEGER
+);
+
+CREATE INDEX mapPinEntity_category ON mapPinEntity(category);
+CREATE INDEX mapPinEntity_entryId ON mapPinEntity(entryId);
+
+-- "All" and "bySubTypes" variants are split (rather than one query with a nullable IN list)
+-- because SQLDelight cannot type a single parameter as both a nullable scalar (for an IS NULL
+-- check) and a collection (for IN) at once. The DAO picks the variant based on whether a
+-- sub-type filter was requested.
+
+weaponPinsAll:
+SELECT mapPinEntity.*, weaponEntity.name AS entryName, weaponEntity.subType AS entrySubType
+FROM mapPinEntity
+JOIN weaponEntity ON weaponEntity.id = mapPinEntity.entryId
+WHERE mapPinEntity.deletedAt IS NULL AND weaponEntity.deletedAt IS NULL
+AND mapPinEntity.category = 'WEAPON';
+
+weaponPinsBySubTypes:
+SELECT mapPinEntity.*, weaponEntity.name AS entryName, weaponEntity.subType AS entrySubType
+FROM mapPinEntity
+JOIN weaponEntity ON weaponEntity.id = mapPinEntity.entryId
+WHERE mapPinEntity.deletedAt IS NULL AND weaponEntity.deletedAt IS NULL
+AND mapPinEntity.category = 'WEAPON'
+AND weaponEntity.subType IN :subTypes;
+
+vehiclePinsAll:
+SELECT mapPinEntity.*, vehicleEntity.name AS entryName, vehicleEntity.subType AS entrySubType
+FROM mapPinEntity
+JOIN vehicleEntity ON vehicleEntity.id = mapPinEntity.entryId
+WHERE mapPinEntity.deletedAt IS NULL AND vehicleEntity.deletedAt IS NULL
+AND mapPinEntity.category = 'VEHICLE';
+
+vehiclePinsBySubTypes:
+SELECT mapPinEntity.*, vehicleEntity.name AS entryName, vehicleEntity.subType AS entrySubType
+FROM mapPinEntity
+JOIN vehicleEntity ON vehicleEntity.id = mapPinEntity.entryId
+WHERE mapPinEntity.deletedAt IS NULL AND vehicleEntity.deletedAt IS NULL
+AND mapPinEntity.category = 'VEHICLE'
+AND vehicleEntity.subType IN :subTypes;
+
+itemPinsAll:
+SELECT mapPinEntity.*, itemEntity.name AS entryName, itemEntity.subType AS entrySubType
+FROM mapPinEntity
+JOIN itemEntity ON itemEntity.id = mapPinEntity.entryId
+WHERE mapPinEntity.deletedAt IS NULL AND itemEntity.deletedAt IS NULL
+AND mapPinEntity.category = 'ITEM';
+
+itemPinsBySubTypes:
+SELECT mapPinEntity.*, itemEntity.name AS entryName, itemEntity.subType AS entrySubType
+FROM mapPinEntity
+JOIN itemEntity ON itemEntity.id = mapPinEntity.entryId
+WHERE mapPinEntity.deletedAt IS NULL AND itemEntity.deletedAt IS NULL
+AND mapPinEntity.category = 'ITEM'
+AND itemEntity.subType IN :subTypes;
+
+pinByEntryId:
+SELECT * FROM mapPinEntity
+WHERE deletedAt IS NULL AND category = :category AND entryId = :entryId;
+
+upsert:
+INSERT INTO mapPinEntity(id, category, entryId, x, y, zone, mapVersion, updatedAt, deletedAt)
+VALUES (:id, :category, :entryId, :x, :y, :zone, :mapVersion, :updatedAt, :deletedAt)
+ON CONFLICT(id) DO UPDATE SET
+    category = excluded.category,
+    entryId = excluded.entryId,
+    x = excluded.x,
+    y = excluded.y,
+    zone = excluded.zone,
+    mapVersion = excluded.mapVersion,
+    updatedAt = excluded.updatedAt,
+    deletedAt = excluded.deletedAt;
+
+tombstone:
+UPDATE mapPinEntity SET deletedAt = :deletedAt, updatedAt = :updatedAt WHERE id = :id;

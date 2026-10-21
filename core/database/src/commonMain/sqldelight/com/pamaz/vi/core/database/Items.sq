@@ -1,0 +1,45 @@
+-- Mirrors :core:model's Item / backend items table. See Weapons.sq for the search/date conventions.
+
+CREATE TABLE itemEntity (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    subType TEXT NOT NULL,
+    zone TEXT,
+    imageUrl TEXT,
+    attributes TEXT NOT NULL,
+    searchKey TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    deletedAt INTEGER
+);
+
+CREATE INDEX itemEntity_updatedAt ON itemEntity(updatedAt);
+CREATE INDEX itemEntity_searchKey ON itemEntity(searchKey);
+
+selectAll:
+SELECT * FROM itemEntity WHERE deletedAt IS NULL ORDER BY name;
+
+selectById:
+SELECT * FROM itemEntity WHERE id = :id AND deletedAt IS NULL;
+
+search:
+SELECT * FROM itemEntity
+WHERE deletedAt IS NULL AND searchKey LIKE '%' || :query || '%'
+ORDER BY name;
+
+upsert:
+INSERT INTO itemEntity(id, name, description, subType, zone, imageUrl, attributes, searchKey, updatedAt, deletedAt)
+VALUES (:id, :name, :description, :subType, :zone, :imageUrl, :attributes, :searchKey, :updatedAt, :deletedAt)
+ON CONFLICT(id) DO UPDATE SET
+    name = excluded.name,
+    description = excluded.description,
+    subType = excluded.subType,
+    zone = excluded.zone,
+    imageUrl = excluded.imageUrl,
+    attributes = excluded.attributes,
+    searchKey = excluded.searchKey,
+    updatedAt = excluded.updatedAt,
+    deletedAt = excluded.deletedAt;
+
+tombstone:
+UPDATE itemEntity SET deletedAt = :deletedAt, updatedAt = :updatedAt WHERE id = :id;
