@@ -20,8 +20,13 @@ internal const val SINGLE_IMAGE_MAX_SCALE = 8f
  * [com.pamaz.vi.core.model.map.MapViewport], [computeFocalZoomCenter], [panCenter], [hitTestPin]
  * and [mapViewerGestures] only ever call [TileScheme.scaleAt]/`.widthPx`/`.heightPx`; none of them
  * know or care that there's no actual tile pyramid behind this particular scheme.
+ *
+ * Public (not `internal`) since step 5B (`:tools:map-editor`): a caller that places pins in
+ * [MapContent.SingleImage] mode (offline "Open image") needs this exact same [TileScheme] itself
+ * to convert its own pixel-space pin-drag deltas into normalized ones, the same way this module's
+ * own gesture code does — see that module's `EditorGeometry.kt`.
  */
-internal fun singleImageTileScheme(imageWidthPx: Int, imageHeightPx: Int): TileScheme =
+fun singleImageTileScheme(imageWidthPx: Int, imageHeightPx: Int): TileScheme =
     TileScheme(imageWidthPx, imageHeightPx, tileSize = max(imageWidthPx, imageHeightPx))
 
 /**

@@ -27,6 +27,8 @@ kotlinx-coroutines = "1.10.2"
 coil = "3.6.3"
 compottie= "2.0.2"
 kotlinx-serialization = "1.11.0"
+supabase = "3.1.4"
+kotlin-csv = "1.10.0"
 koin = "4.1.1"
 koin_annotations = "2.3.1"
 
@@ -77,8 +79,15 @@ ktor_auth = { group = "io.ktor", name = "ktor-client-auth", version.ref = "ktor"
 ktor_logging = { group = "io.ktor", name = "ktor-client-logging", version.ref = "ktor" }
 ktor_client_mock = { group = "io.ktor", name = "ktor-client-mock", version.ref = "ktor" }
 
+supabase_bom = { group = "io.github.jan-tennert.supabase", name = "bom", version.ref = "supabase" }
+supabase_postgrest = { group = "io.github.jan-tennert.supabase", name = "postgrest-kt" }
+supabase_auth = { group = "io.github.jan-tennert.supabase", name = "auth-kt" }
+
+kotlin_csv = { group = "com.github.doyaaaaaken", name = "kotlin-csv-jvm", version.ref = "kotlin-csv" }
+
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
 
 coil_base = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 coil_ktor = { group = "io.coil-kt.coil3", name = "coil-network-ktor3", version.ref = "coil" }
