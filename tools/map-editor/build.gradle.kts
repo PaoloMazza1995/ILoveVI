@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.jetbrainsKotlinJvm)
@@ -21,6 +22,28 @@ java {
 
 application {
     mainClass.set("com.pamaz.vi.tools.mapeditor.MainKt")
+}
+
+// SupabaseConfig.fromEnvironment() / MapEditorBackend.fromEnvironment() read real process env
+// vars, not Gradle properties, so these entries in the root local.properties need forwarding into
+// the `run` task's child JVM explicitly.
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { load(it) }
+    }
+}
+
+// IntelliJ's gutter "run" action creates its own ad-hoc JavaExec task per main function rather
+// than reusing the application plugin's `run` task, so this must cover every JavaExec task, not
+// just `run`, to work from the IDE too. An already-exported shell env var wins over
+// local.properties — JavaExec.environment(...) would otherwise unconditionally override it.
+tasks.withType<JavaExec>().configureEach {
+    listOf("SUPABASE_URL", "SUPABASE_ANON_KEY", "MAP_EDITOR_BACKEND").forEach { key ->
+        if (System.getenv(key) == null) {
+            localProperties.getProperty(key)?.let { environment(key, it) }
+        }
+    }
 }
 
 dependencies {
@@ -54,6 +77,7 @@ dependencies {
     implementation(platform(libs.supabase.bom))
     implementation(libs.supabase.postgrest)
     implementation(libs.supabase.auth)
+    implementation(libs.supabase.storage)
 
     implementation(libs.koin.core)
     implementation(libs.koin.compose)
@@ -64,4 +88,7 @@ dependencies {
     testImplementation(libs.kotlin.testJunit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.mock)
+    // The acceptance's "place a pin -> create a new entry -> press Commit -> success" UI test,
+    // scoped to this one flow, not a general Compose UI test harness.
+    testImplementation(compose.desktop.uiTestJUnit4)
 }

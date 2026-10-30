@@ -51,8 +51,9 @@ sealed interface EntryRef {
 }
 
 /**
- * A marker on the map for one located [Weapon], [Vehicle] or [Item]. There is at most one
- * [MapPin] per located entry; an entry with no known coordinates simply has no [MapPin] row.
+ * A marker on the map for one located [Weapon], [Vehicle] or [Item]. An entry can have any number
+ * of [MapPin]s (e.g. the same weapon available in several zones); an entry with no known
+ * coordinates simply has no [MapPin] row.
  *
  * The map shows no user/player position in this version: there is deliberately no location,
  * permission or "current position" concept anywhere in this module.

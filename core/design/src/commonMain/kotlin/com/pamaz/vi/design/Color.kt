@@ -18,6 +18,17 @@ object IloveViColors {
     val brandPurple = Color(0xFF8B8CF5)
     val brandTeal = Color(0xFF2FE6D2)
     val inkOnBrand = Color(0xFF140A24)
+
+    /**
+     * Warning/attention accent — not in design/tokens.json's 10 color tokens (verified: no yellow
+     * exists there, and `theme.usage` groups "mild warnings" under `brand-orange` instead). Added
+     * for `:tools:map-editor`'s Map Editor Functional Analysis (incomplete-pin badges, "N pins
+     * need an entry"), which specifies a distinct yellow (`#FFD84D`) so a warning is never visually
+     * confused with the Vehicles category (also orange-based). General-purpose, not map-editor-only
+     * — any future warning state elsewhere in the app should reuse this rather than inventing
+     * another one-off yellow.
+     */
+    val warningYellow = Color(0xFFFFD84D)
 }
 
 /**

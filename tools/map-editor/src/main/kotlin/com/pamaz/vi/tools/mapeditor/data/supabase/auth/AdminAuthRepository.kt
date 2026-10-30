@@ -1,5 +1,7 @@
-package com.pamaz.vi.tools.mapeditor.auth
+package com.pamaz.vi.tools.mapeditor.data.supabase.auth
 
+import com.pamaz.vi.tools.mapeditor.model.AdminSession
+import com.pamaz.vi.tools.mapeditor.model.AdminSignInResult
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.SignOutScope
 import io.github.jan.supabase.auth.auth

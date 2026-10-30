@@ -25,6 +25,11 @@ enum class IloveViButtonVariant { Primary, Secondary }
 /**
  * Button for a screen's or card's main action.
  * Fixed height 52dp, radius-md radius, body-lg text (-> labelLarge), full width by default.
+ *
+ * [useDisplayFont] swaps the label to the Anton `displaySmall` style instead of Barlow
+ * `labelLarge` — for a header's "hero" action that the rest of the header already sets in Anton
+ * (e.g. `:tools:map-editor`'s Commit button, Map Editor Functional Analysis §4: "Commit button
+ * (Anton, pink...)"). Off by default — every existing caller keeps its current Barlow label.
  */
 @Composable
 fun IloveViButton(
@@ -33,6 +38,7 @@ fun IloveViButton(
     modifier: Modifier = Modifier,
     variant: IloveViButtonVariant = IloveViButtonVariant.Primary,
     enabled: Boolean = true,
+    useDisplayFont: Boolean = false,
 ) {
     val background = when {
         !enabled -> IloveViColors.border
@@ -44,6 +50,8 @@ fun IloveViButton(
         variant == IloveViButtonVariant.Primary -> IloveViColors.inkOnBrand
         else -> IloveViColors.ink
     }
+    val textStyle =
+        if (useDisplayFont) MaterialTheme.typography.displaySmall else MaterialTheme.typography.labelLarge
 
     Box(
         modifier = modifier
@@ -59,7 +67,7 @@ fun IloveViButton(
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = text, color = textColor, style = MaterialTheme.typography.labelLarge)
+        Text(text = text, color = textColor, style = textStyle)
     }
 }
 
@@ -84,5 +92,13 @@ private fun IloveViButtonSecondaryPreview() {
 private fun IloveViButtonDisabledPreview() {
     IloveViTheme {
         IloveViButton(text = "Not available", onClick = {}, enabled = false)
+    }
+}
+
+@Preview
+@Composable
+private fun IloveViButtonDisplayFontPreview() {
+    IloveViTheme {
+        IloveViButton(text = "COMMIT 5", onClick = {}, useDisplayFont = true)
     }
 }

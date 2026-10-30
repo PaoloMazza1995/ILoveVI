@@ -11,4 +11,6 @@ data class EntrySummary(
     val entryRef: EntryRef,
     val name: String,
     val zone: String?,
+    /** Raw `sub_type` column value (e.g. `"RIFLE"`) — lets the map show the entry's real sub-type icon instead of just its category's generic one (step 5B extension). */
+    val subType: String,
 )

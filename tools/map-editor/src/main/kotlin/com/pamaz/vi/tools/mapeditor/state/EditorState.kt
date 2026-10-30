@@ -1,336 +1,671 @@
 package com.pamaz.vi.tools.mapeditor.state
 
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
 import com.pamaz.vi.core.mapview.MapContent
 import com.pamaz.vi.core.mapview.loadSingleImageMapContentFromFile
 import com.pamaz.vi.core.model.EntryCategory
-import com.pamaz.vi.core.model.EntryRef
-import com.pamaz.vi.core.model.MapConfig
-import com.pamaz.vi.core.model.MapPin
-import com.pamaz.vi.core.model.MapPinId
 import com.pamaz.vi.core.model.NormalizedPoint
-import com.pamaz.vi.tools.mapeditor.auth.AdminAuthRepository
-import com.pamaz.vi.tools.mapeditor.auth.AdminSession
-import com.pamaz.vi.tools.mapeditor.auth.AdminSignInResult
+import com.pamaz.vi.tools.mapeditor.data.AuthService
+import com.pamaz.vi.tools.mapeditor.data.CommitPayloadBuilder
+import com.pamaz.vi.tools.mapeditor.data.CommitResult
+import com.pamaz.vi.tools.mapeditor.data.CommitService
+import com.pamaz.vi.tools.mapeditor.data.DraftStore
 import com.pamaz.vi.tools.mapeditor.data.EntryRepository
 import com.pamaz.vi.tools.mapeditor.data.MapConfigRepository
-import com.pamaz.vi.tools.mapeditor.data.MapPinRepository
-import com.pamaz.vi.tools.mapeditor.data.pinRowId
-import com.pamaz.vi.tools.mapeditor.importer.ImportReport
-import com.pamaz.vi.tools.mapeditor.importer.ImportValidator
-import com.pamaz.vi.tools.mapeditor.importer.PinCsvIo
-import com.pamaz.vi.tools.mapeditor.importer.PinJsonIo
-import com.pamaz.vi.tools.mapeditor.importer.ValidatedPinRow
-import com.pamaz.vi.tools.mapeditor.importer.toPinRow
+import com.pamaz.vi.tools.mapeditor.data.MapConfigResult
+import com.pamaz.vi.tools.mapeditor.data.MapPublisher
+import com.pamaz.vi.tools.mapeditor.data.MapTileChecker
+import com.pamaz.vi.tools.mapeditor.data.PinRepository
+import com.pamaz.vi.tools.mapeditor.model.DraftEntry
+import com.pamaz.vi.tools.mapeditor.model.DraftPin
+import com.pamaz.vi.tools.mapeditor.model.DraftSnapshot
+import com.pamaz.vi.tools.mapeditor.model.EditMode
+import com.pamaz.vi.tools.mapeditor.model.EntryFields
+import com.pamaz.vi.tools.mapeditor.model.EntrySource
 import com.pamaz.vi.tools.mapeditor.model.EntrySummary
+import com.pamaz.vi.tools.mapeditor.model.MapLoadError
+import com.pamaz.vi.tools.mapeditor.model.MapPublishOutcome
+import com.pamaz.vi.tools.mapeditor.model.MapPublishPhase
+import com.pamaz.vi.tools.mapeditor.model.MapPublishPlanResult
+import com.pamaz.vi.tools.mapeditor.model.MapPublishSnapshot
+import com.pamaz.vi.tools.mapeditor.model.Session
+import com.pamaz.vi.tools.mapeditor.model.SignInResult
 import com.pamaz.vi.tools.mapeditor.model.rawEntryId
-import com.pamaz.vi.tools.mapeditor.model.toEntryRefOrNull
-import com.pamaz.vi.tools.mapeditor.offline.OfflinePinStore
+import com.pamaz.vi.tools.mapeditor.model.subTypes
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
-import kotlin.time.Clock
-import kotlin.time.ExperimentalTime
+import java.util.UUID
 
-/** Everything the left panel can filter the entry list by (PLT-03). */
-enum class EntryFilter { ALL, NO_PIN, WEAPON, VEHICLE, ITEM }
+/** Undo/redo keeps at least this many steps (EDT-22: "at least 50 steps"). */
+internal const val MaxUndoSteps = 50
 
-/** One line in the always-up-to-date list, combining an [EntrySummary] with whether it already has a pin. */
-data class EntryListItem(val summary: EntrySummary, val hasPin: Boolean)
+/** EDT-61 "debounced": how long a burst of changes (e.g. every frame of a pin drag) waits before the next disk write. */
+private const val AutosaveDebounceMillis = 400L
+
+/** PLT-08: how long `load()` waits for `map_config` + the first tile before giving up with a plain-words reason instead of hanging on "Loading...". */
+private const val MapLoadTimeoutMillis = 10_000L
+
+private data class UndoSnapshot(
+    val pins: List<DraftPin>,
+    val entries: List<DraftEntry>,
+    val selectedPinIds: Set<String>,
+)
+
+/** The result of a Commit attempt (EDT-74/75) — what `ui/CommitDialog.kt` switches its success/error state on. */
+sealed interface CommitOutcome {
+    data class Success(val result: CommitResult) : CommitOutcome
+    data class Failure(val message: String) : CommitOutcome
+}
 
 /**
- * The map tool's single source of truth: what's armed, which pins exist and which of them are
- * dirty, whether we're online (signed in) or working offline from a local image (PLT-09). Plain
- * Compose state, not an Android `ViewModel` — this app has no Android lifecycle to tie one to.
- *
- * Every *write* path (`placeOrMovePin`, `deletePin`, `save`, `applyImport`) only ever queues an
- * in-memory change; nothing reaches the backend until [save] is called, and [save] itself no-ops
- * with [lastError] set if [adminSession] is `null` — "nothing is written without an admin
- * session" (acceptance) is enforced here, in addition to the server's own RLS.
+ * The map editor's single source of truth: one immutable [EditorUiState] plus plain intent
+ * functions that compute the next one — no `androidx.compose.runtime` dependency anywhere (see
+ * [EditorUiState]'s own KDoc). The UI layer bridges [state] into Compose with the standard
+ * `collectAsState()`; nothing here needs to know Compose exists.
  */
-@OptIn(ExperimentalTime::class)
 class EditorState(
     private val entryRepository: EntryRepository,
-    private val mapPinRepository: MapPinRepository,
+    private val pinRepository: PinRepository,
     private val mapConfigRepository: MapConfigRepository,
-    private val authRepository: AdminAuthRepository,
+    private val authService: AuthService,
+    private val commitService: CommitService,
+    private val draftStore: DraftStore,
+    private val mapTileChecker: MapTileChecker,
+    private val mapPublisher: MapPublisher,
+    private val scope: CoroutineScope,
 ) {
-    private val _adminSession = MutableStateFlow<AdminSession?>(null)
-    val adminSession = _adminSession.asStateFlow()
+    private val _state = MutableStateFlow(EditorUiState())
+    val state: StateFlow<EditorUiState> = _state.asStateFlow()
 
-    private val _lastError = MutableStateFlow<String?>(null)
-    val lastError = _lastError.asStateFlow()
+    private val undoStack = ArrayDeque<UndoSnapshot>()
+    private val redoStack = ArrayDeque<UndoSnapshot>()
 
-    private val _statusMessage = MutableStateFlow<String?>(null)
-    val statusMessage = _statusMessage.asStateFlow()
-
-    val entries = mutableStateListOf<EntrySummary>()
-
-    /** Keyed by `(category, entry_id)` — matches `map_pins`' own unique constraint, so "does this entry have a pin" is a plain map lookup. */
-    private val pinsByEntry = linkedMapOf<Pair<String, String>, MapPin>()
-    val pins = mutableStateListOf<MapPin>()
-
-    /** Entry ids present in [pinsByEntry] but belonging to a map_version older than [mapConfig]'s — "to reposition" (`:tools:tilegen`'s README). */
-    val pinsToReposition = mutableStateListOf<MapPin>()
-
-    private val dirtyPinKeys = mutableSetOf<Pair<String, String>>()
-    private val deletedPinIds = mutableSetOf<String>()
-    val hasUnsavedChanges get() = dirtyPinKeys.isNotEmpty() || deletedPinIds.isNotEmpty()
-
-    var mapConfig = mutableStateOf<MapConfig?>(null)
-        private set
-    var mapContent = mutableStateOf<MapContent?>(null)
-        private set
-
-    /** `true` once "Open image" (PLT-09) was used instead of signing in — publishing is blocked until [adminSession] is set too. */
-    var isOffline = mutableStateOf(false)
-        private set
-    private var offlineStore: OfflinePinStore? = null
-    private var offlineMapVersion = 0
-
-    var armedEntry = mutableStateOf<EntrySummary?>(null)
-        private set
-    var selectedPinKey = mutableStateOf<Pair<String, String>?>(null)
-        private set
-
-    private fun entryKey(ref: EntryRef) = ref.category.name to ref.rawEntryId()
-
-    suspend fun loadEntries() {
-        entries.clear()
-        entries.addAll(entryRepository.loadAll())
+    init {
+        val draft = draftStore.load()
+        updateState { it.copy(draftPins = draft.pins, draftEntries = draft.entries) }
     }
 
-    suspend fun loadOnlineMap() {
-        val config = mapConfigRepository.loadCurrent()
-        mapConfig.value = config
-        if (config != null) {
-            mapContent.value = MapContent.Tiles(config)
-            val allPins = mapPinRepository.loadPins()
-            pinsByEntry.clear()
-            allPins.forEach { pinsByEntry[entryKey(it.entryRef)] = it }
-            refreshPinLists(config.mapVersion)
-        }
+    private inline fun updateState(transform: (EditorUiState) -> EditorUiState) {
+        _state.value = transform(_state.value)
     }
 
-    private fun refreshPinLists(currentVersion: Int) {
-        pins.clear()
-        pins.addAll(pinsByEntry.values)
-        pinsToReposition.clear()
-        pinsToReposition.addAll(pinsByEntry.values.filter { it.mapVersion != currentVersion })
-    }
+    // --- Loading (entries/pins/map — read-only, no admin session required) -------------------
 
-    fun entryListItems(filter: EntryFilter, query: String): List<EntryListItem> = entries
-        .asSequence()
-        .filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
-        .map { EntryListItem(it, pinsByEntry.containsKey(entryKey(it.entryRef))) }
-        .filter {
-            when (filter) {
-                EntryFilter.ALL -> true
-                EntryFilter.NO_PIN -> !it.hasPin
-                EntryFilter.WEAPON -> it.summary.entryRef.category == EntryCategory.WEAPON
-                EntryFilter.VEHICLE -> it.summary.entryRef.category == EntryCategory.VEHICLE
-                EntryFilter.ITEM -> it.summary.entryRef.category == EntryCategory.ITEM
+    private var loadJob: Job? = null
+
+    /**
+     * PLT-08: used to hang on "Loading..." forever if `map_config`/the first tile never resolved
+     * — any thrown exception here (network error, RLS denial, ...) now surfaces as [MapLoadError]
+     * instead of silently leaving [EditorUiState.isLoading] `true`, and the whole attempt is
+     * bounded by [MapLoadTimeoutMillis] so a hanging connection can't do the same thing a
+     * different way.
+     */
+    fun load() {
+        loadJob?.cancel()
+        loadJob = scope.launch {
+            updateState {
+                it.copy(
+                    isLoading = true,
+                    mapLoadError = null,
+                    invalidMapConfigRow = null
+                )
+            }
+            try {
+                val timedOut = withTimeoutOrNull(MapLoadTimeoutMillis) {
+                    val entries = entryRepository.loadAll()
+                    val pins = pinRepository.loadAll()
+
+                    when (val configResult = mapConfigRepository.loadCurrent()) {
+                        is MapConfigResult.Loaded -> {
+                            val tileError = mapTileChecker.checkReachable(configResult.config)
+                            updateState {
+                                it.copy(
+                                    dbEntries = entries,
+                                    dbPins = pins,
+                                    mapConfig = configResult.config,
+                                    mapContent = if (tileError == null) MapContent.Tiles(
+                                        configResult.config
+                                    ) else null,
+                                    isLoading = false,
+                                    mapLoadError = tileError,
+                                    invalidMapConfigRow = null,
+                                )
+                            }
+                        }
+
+                        MapConfigResult.Missing -> updateState {
+                            it.copy(
+                                dbEntries = entries,
+                                dbPins = pins,
+                                mapConfig = null,
+                                mapContent = null,
+                                isLoading = false,
+                                mapLoadError = MapLoadError("No map is configured yet."),
+                                invalidMapConfigRow = null,
+                            )
+                        }
+
+                        is MapConfigResult.Invalid -> updateState {
+                            it.copy(
+                                dbEntries = entries,
+                                dbPins = pins,
+                                mapConfig = null,
+                                mapContent = null,
+                                isLoading = false,
+                                mapLoadError = MapLoadError(configResult.reason),
+                                invalidMapConfigRow = configResult.rawRow,
+                            )
+                        }
+                    }
+                }
+                if (timedOut == null) {
+                    updateState {
+                        it.copy(
+                            isLoading = false,
+                            mapLoadError = MapLoadError("The map didn't finish loading within ${MapLoadTimeoutMillis / 1000}s."),
+                        )
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updateState {
+                    it.copy(
+                        isLoading = false,
+                        mapLoadError = MapLoadError(
+                            e.message ?: "Unknown error while loading the map."
+                        ),
+                    )
+                }
             }
         }
-        .toList()
-
-    /** PLT-03: selecting an entry arms placement — the next map click/tap places or moves *this* entry's pin. */
-    fun armEntry(entry: EntrySummary) {
-        armedEntry.value = entry
     }
 
-    /** PLT-04: a click creates the armed entry's pin at [point], or moves it if one already exists. */
-    fun placeOrMoveArmedPinAt(point: NormalizedPoint) {
-        val entry = armedEntry.value ?: return
-        upsertLocalPin(entry.entryRef, point, entry.zone)
-    }
-
-    fun moveSelectedPin(point: NormalizedPoint) {
-        val key = selectedPinKey.value ?: return
-        val existing = pinsByEntry[key] ?: return
-        upsertLocalPin(existing.entryRef, point, existing.zone)
-    }
-
-    private fun upsertLocalPin(entryRef: EntryRef, point: NormalizedPoint, zone: String?) {
-        val key = entryKey(entryRef)
-        val version = mapConfig.value?.mapVersion ?: offlineMapVersion
-        val existing = pinsByEntry[key]
-        val updated = MapPin(
-            id = existing?.id ?: MapPinId(pinRowId(entryRef.category.name, entryRef.rawEntryId())),
-            entryRef = entryRef,
-            position = point,
-            zone = zone,
-            mapVersion = version,
-            updatedAt = Clock.System.now(),
-        )
-        pinsByEntry[key] = updated
-        dirtyPinKeys += key
-        deletedPinIds -= updated.id.value
-        selectedPinKey.value = key
-        refreshPinLists(mapConfig.value?.mapVersion ?: offlineMapVersion)
-    }
-
-    fun selectPin(key: Pair<String, String>) {
-        selectedPinKey.value = key
-    }
-
-    /** [pinId] is a [MapPin.id] value (what `MapViewerPin.id`/`onPinTap` carry) — looked up back to the `(category, entry_id)` key the rest of this class is keyed by. */
-    fun selectPinById(pinId: String) {
-        pinsByEntry.values.find { it.id.value == pinId }?.let { selectPin(entryKey(it.entryRef)) }
-    }
-
-    fun positionOfPin(pinId: String): NormalizedPoint? =
-        pinsByEntry.values.find { it.id.value == pinId }?.position
-
-    /** The currently selected [MapPin] (if any) — what drag/arrow-key nudging in [EditorScreen] move. */
-    val selectedPin: MapPin? get() = selectedPinKey.value?.let { pinsByEntry[it] }
-
-    /** PLT-04: Delete removes the selected pin — soft delete (backend) / a plain removal from the local offline file. */
-    fun deleteSelectedPin() {
-        val key = selectedPinKey.value ?: return
-        val pin = pinsByEntry.remove(key) ?: return
-        deletedPinIds += pin.id.value
-        dirtyPinKeys -= key
-        selectedPinKey.value = null
-        refreshPinLists(mapConfig.value?.mapVersion ?: offlineMapVersion)
-    }
-
-    /** PLT-04: arrow-key nudge (and drag) land here once `core:mapview`'s `EditorGeometry` has computed the new point. */
-    fun nudgeSelectedPinTo(point: NormalizedPoint) = moveSelectedPin(point)
-
-    // --- Auth -------------------------------------------------------------------------------
-
-    suspend fun signIn(email: String, password: String): AdminSignInResult {
-        val result = authRepository.signIn(email, password)
-        if (result is AdminSignInResult.Success) {
-            _adminSession.value = result.session
-            _lastError.value = null
-        } else {
-            _lastError.value = when (result) {
-                is AdminSignInResult.InvalidCredentials -> result.message
-                is AdminSignInResult.NotAnAdmin -> "${result.email} signed in but is not an admin."
-                is AdminSignInResult.NetworkError -> result.message
-                is AdminSignInResult.Success -> null
+    /** §1's secondary "Open local image (offline, no upload)" button — PLT-09's existing local-PNG mode, no backend/network involved at all. */
+    fun openLocalImage(file: File) {
+        scope.launch {
+            try {
+                val content =
+                    withContext(Dispatchers.IO) { loadSingleImageMapContentFromFile(file) }
+                updateState {
+                    it.copy(
+                        mapContent = content,
+                        mapConfig = null,
+                        isLoading = false,
+                        mapLoadError = null
+                    )
+                }
+            } catch (e: Exception) {
+                updateState {
+                    it.copy(mapLoadError = MapLoadError("Could not open \"${file.name}\": ${e.message}"))
+                }
             }
+        }
+    }
+
+    // --- Map publish (PLT-08: "Load map image...") --------------------------------------------
+
+    private var mapPublishJob: Job? = null
+
+    /** Validates/plans [file] and opens the confirmation step — called right after the Swing file picker returns. */
+    fun startMapPublish(file: File) {
+        mapPublishJob?.cancel()
+        mapPublishJob = scope.launch {
+            updateState { it.copy(mapPublish = MapPublishSnapshot(phase = MapPublishPhase.CONFIRM)) }
+            when (val result = mapPublisher.plan(file)) {
+                is MapPublishPlanResult.Valid -> updateState {
+                    it.copy(
+                        mapPublish = MapPublishSnapshot(
+                            phase = MapPublishPhase.CONFIRM,
+                            plan = result.plan
+                        )
+                    )
+                }
+
+                is MapPublishPlanResult.Invalid -> updateState {
+                    it.copy(
+                        mapPublish = MapPublishSnapshot(
+                            phase = MapPublishPhase.CONFIRM,
+                            invalidReason = result.message
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /** §4: admin-only, checked here too (defense in depth — the Confirm button is already disabled otherwise). */
+    fun confirmMapPublish() {
+        val plan = _state.value.mapPublish?.plan ?: return
+        if (_state.value.session?.isAdmin != true) return
+
+        mapPublishJob?.cancel()
+        mapPublishJob = scope.launch {
+            updateState {
+                it.copy(
+                    mapPublish = it.mapPublish?.copy(
+                        phase = MapPublishPhase.RUNNING,
+                        errorMessage = null
+                    )
+                )
+            }
+            when (val outcome = mapPublisher.publish(plan) { steps ->
+                updateState {
+                    it.copy(
+                        mapPublish = it.mapPublish?.copy(steps = steps)
+                    )
+                }
+            }) {
+                is MapPublishOutcome.Success -> {
+                    updateState {
+                        it.copy(
+                            mapPublish = it.mapPublish?.copy(
+                                phase = MapPublishPhase.SUCCESS,
+                                mapConfig = outcome.mapConfig
+                            )
+                        )
+                    }
+                    load()
+                }
+
+                is MapPublishOutcome.Failure -> updateState {
+                    it.copy(
+                        mapPublish = it.mapPublish?.copy(
+                            phase = MapPublishPhase.ERROR,
+                            errorMessage = outcome.message
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /** Same pipeline, same plan (including whatever `MapPublisher` already uploaded) — see that interface's own KDoc on resuming. */
+    fun retryMapPublish() = confirmMapPublish()
+
+    /** §4: "Cancel is possible at any time; cancelling leaves map_config untouched" — publish only ever writes `map_config` as its very last step. */
+    fun cancelMapPublish() {
+        mapPublishJob?.cancel()
+        updateState { it.copy(mapPublish = null) }
+    }
+
+    fun dismissMapPublish() {
+        updateState { it.copy(mapPublish = null) }
+    }
+
+    // --- Session (EDT-01..04) -----------------------------------------------------------------
+
+    suspend fun signIn(email: String, password: String): SignInResult {
+        val result = authService.signIn(email, password)
+        if (result is SignInResult.Success) {
+            updateState { it.copy(session = result.session, lastError = null) }
+            load()
         }
         return result
     }
 
-    // --- Offline mode (PLT-09) ----------------------------------------------------------------
+    /** Called once on startup, before the sign-in screen shows, to pick up a session saved from a previous launch (see [AuthService.restoreSession]). */
+    suspend fun restoreSession(): Session? {
+        val restored = authService.restoreSession()
+        if (restored != null) {
+            updateState { it.copy(session = restored, lastError = null) }
+            load()
+        }
+        return restored
+    }
 
-    fun openLocalImage(imageFile: File, storeFile: File, mapVersion: Int) {
-        isOffline.value = true
-        offlineMapVersion = mapVersion
-        offlineStore = OfflinePinStore(storeFile)
-        mapContent.value = loadSingleImageMapContentFromFile(imageFile)
-        pinsByEntry.clear()
-        offlineStore?.load()?.forEach { row ->
-            val ref = row.toEntryRefOrNull() ?: return@forEach
-            pinsByEntry[entryKey(ref)] = MapPin(
-                id = MapPinId(pinRowId(row.category, row.entryId)),
-                entryRef = ref,
-                position = NormalizedPoint(row.x, row.y),
-                zone = row.zone,
-                mapVersion = row.mapVersion ?: mapVersion,
-                updatedAt = Clock.System.now(),
+    fun signOut() {
+        authService.signOut()
+        updateState { it.copy(session = null) }
+    }
+
+    // --- Toolbar: mode / active category / active entry ---------------------------------------
+
+    fun setMode(mode: EditMode) {
+        updateState {
+            it.copy(
+                mode = mode,
+                selectedPinIds = if (mode == EditMode.PLACE) emptySet() else it.selectedPinIds
             )
         }
-        refreshPinLists(mapVersion)
     }
 
-    /** Writes every current pin to the local offline file (not the backend — see [publishOfflinePins]). */
-    fun saveOffline() {
-        val store = offlineStore ?: return
-        store.save(pinsByEntry.values.map { pin ->
-            com.pamaz.vi.tools.mapeditor.model.PinRow(
-                category = pin.entryRef.category.name,
-                entryId = pin.entryRef.rawEntryId(),
-                x = pin.position.x,
-                y = pin.position.y,
-                zone = pin.zone,
-                mapVersion = pin.mapVersion,
-            )
-        })
-        dirtyPinKeys.clear()
-        deletedPinIds.clear()
-        _statusMessage.value = "Saved to the local offline file."
-    }
-
-    /** PLT-09: publishes the offline file's pins to the backend once signed in — reuses the exact same validate → confirm → upsert path as a CSV/JSON import. */
-    suspend fun publishOfflinePins(): ImportReport? {
-        val store = offlineStore ?: return null
-        if (_adminSession.value == null) {
-            _lastError.value = "Sign in as an admin before publishing offline pins."
-            return null
-        }
-        val rows = store.load()
-        val known = entries.map { it.entryRef.category.name to it.entryRef.rawEntryId() }.toSet()
-        return ImportValidator.validate(rows, known)
-    }
-
-    suspend fun confirmImport(validRows: List<ValidatedPinRow>) {
-        val version = mapConfig.value?.mapVersion ?: offlineMapVersion
-        val asPins = validRows.map { row ->
-            MapPin(
-                id = MapPinId(pinRowId(row.entryRef.category.name, row.entryRef.rawEntryId())),
-                entryRef = row.entryRef,
-                position = row.position,
-                zone = row.zone,
-                mapVersion = version,
-                updatedAt = Clock.System.now(),
+    fun setActiveCategory(category: EntryCategory) {
+        updateState {
+            it.copy(
+                activeCategory = category,
+                activeSubType = category.subTypes().first(),
+                activeEntry = null
             )
         }
-        mapPinRepository.upsertAll(asPins)
-        asPins.forEach { pinsByEntry[entryKey(it.entryRef)] = it }
-        refreshPinLists(version)
-        _statusMessage.value = "Imported ${asPins.size} pin(s)."
     }
 
-    // --- Import / export (PLT-06) ------------------------------------------------------------
+    fun setActiveSubType(subType: String) {
+        updateState { it.copy(activeSubType = subType) }
+    }
 
-    fun importReportFor(file: File): ImportReport {
-        val rows = if (file.extension.equals("json", ignoreCase = true)) {
-            PinJsonIo.read(file)
-        } else {
-            PinCsvIo.read(file)
+    /** EDT-32: "Place another pin of this entry" / the active-entry banner's close button (pass `null`). */
+    fun setActiveEntry(entry: EntrySource?) {
+        updateState { it.copy(activeEntry = entry) }
+    }
+
+    fun setShowDbPins(show: Boolean) {
+        updateState { it.copy(showDbPins = show) }
+    }
+
+    // --- Placing (EDT-30..33) ------------------------------------------------------------------
+
+    /** Place mode: adds one new pin at [point] for whatever is currently armed, or an empty (incomplete) one. Returns the new pin so the UI can decide whether to open the Inspector (EDT-31). */
+    fun placeAt(point: NormalizedPoint): DraftPin {
+        pushUndo()
+        val current = _state.value
+        val pin = DraftPin(
+            id = UUID.randomUUID().toString(),
+            position = point,
+            category = current.activeCategory,
+            subType = current.activeSubType,
+            entry = current.activeEntry,
+        )
+        updateState { it.copy(draftPins = it.draftPins + pin, selectedPinIds = setOf(pin.id)) }
+        persist()
+        return pin
+    }
+
+    // --- Selecting / moving / deleting (EDT-40..42) --------------------------------------------
+
+    fun select(pinId: String, additive: Boolean = false) {
+        updateState {
+            val next = if (additive) it.selectedPinIds + pinId else setOf(pinId)
+            it.copy(selectedPinIds = next)
         }
-        val known = entries.map { it.entryRef.category.name to it.entryRef.rawEntryId() }.toSet()
-        return ImportValidator.validate(rows, known)
     }
 
-    fun exportTo(file: File) {
-        val rows = pinsByEntry.values.map { pin ->
-            ValidatedPinRow(pin.entryRef, pin.position, pin.zone).toPinRow()
+    fun selectWithin(
+        corner1: NormalizedPoint,
+        corner2: NormalizedPoint,
+        additive: Boolean = false
+    ) {
+        val minX = minOf(corner1.x, corner2.x)
+        val maxX = maxOf(corner1.x, corner2.x)
+        val minY = minOf(corner1.y, corner2.y)
+        val maxY = maxOf(corner1.y, corner2.y)
+        updateState { current ->
+            val within = current.draftPins
+                .filter { it.position.x in minX..maxX && it.position.y in minY..maxY }
+                .map { it.id }
+            val next = if (additive) current.selectedPinIds + within else within.toSet()
+            current.copy(selectedPinIds = next)
         }
-        if (file.extension.equals("json", ignoreCase = true)) PinJsonIo.write(
-            file,
-            rows
-        ) else PinCsvIo.write(file, rows)
     }
 
-    // --- New map version (PLT-08) ------------------------------------------------------------
-
-    /** After `:tools:tilegen`'s pipeline registers a new `map_config` row: switch to it and re-flag every pin whose `map_version` isn't [newConfig]'s as "to reposition" — existing pins are never moved/revalidated automatically (`:tools:tilegen`'s README). */
-    fun applyNewMapConfig(newConfig: MapConfig) {
-        mapConfig.value = newConfig
-        mapContent.value = MapContent.Tiles(newConfig)
-        refreshPinLists(newConfig.mapVersion)
+    fun clearSelection() {
+        updateState { it.copy(selectedPinIds = emptySet()) }
     }
 
-    // --- Save (PLT-07) ------------------------------------------------------------------------
+    fun moveSelectedTo(pinId: String, point: NormalizedPoint) {
+        pushUndo()
+        updateState { current ->
+            current.copy(draftPins = current.draftPins.map { if (it.id == pinId) it.copy(position = point) else it })
+        }
+        persist()
+    }
 
-    /** Upserts every dirty pin and soft-deletes every removed one. No-ops (with [lastError] set) if there is no [adminSession] — "nothing is written without an admin session". */
-    suspend fun save() {
-        if (_adminSession.value == null) {
-            _lastError.value = "Sign in as an admin before saving."
+    /** EDT-41: removes every selected pin; a draft entry no remaining pin points at is removed with it. */
+    fun deleteSelected() {
+        if (_state.value.selectedPinIds.isEmpty()) return
+        pushUndo()
+        updateState { current ->
+            val remainingPins = current.draftPins.filterNot { it.id in current.selectedPinIds }
+            current.copy(
+                draftPins = remainingPins,
+                draftEntries = pruneUnusedDraftEntries(remainingPins, current.draftEntries),
+                selectedPinIds = emptySet(),
+            )
+        }
+        persist()
+    }
+
+    /** EDT-57: only for a pin with no entry yet — the sub-type resets to the new category's first option. */
+    fun setCategoryForPin(pinId: String, category: EntryCategory) {
+        pushUndo()
+        updateState { current ->
+            current.copy(
+                draftPins = current.draftPins.map {
+                    if (it.id == pinId && it.entry == null) {
+                        it.copy(category = category, subType = category.subTypes().first())
+                    } else {
+                        it
+                    }
+                },
+            )
+        }
+        persist()
+    }
+
+    // --- Linking a pin to an entry (EDT-51..58) -------------------------------------------------
+
+    /** A case-insensitive same-category name match among already-saved entries — a pure query, not a mutation (EDT-55's inline warning). */
+    fun duplicateMatch(category: EntryCategory, name: String): EntrySummary? {
+        if (name.isBlank()) return null
+        return _state.value.dbEntries.find {
+            it.entryRef.category == category && it.name.equals(name, ignoreCase = true)
+        }
+    }
+
+    fun linkExisting(pinId: String, entry: EntrySummary) {
+        pushUndo()
+        updateState { current ->
+            val oldPins = current.draftPins
+            val newPins = oldPins.map {
+                if (it.id == pinId) {
+                    it.copy(
+                        category = entry.entryRef.category,
+                        subType = entry.subType,
+                        entry = EntrySource.Db(entry.entryRef.rawEntryId()),
+                    )
+                } else {
+                    it
+                }
+            }
+            current.copy(
+                draftPins = newPins,
+                draftEntries = pruneUnusedDraftEntries(newPins, current.draftEntries)
+            )
+        }
+        persist()
+    }
+
+    /**
+     * Creates or updates (if [pinId] already points at a draft entry) a [DraftEntry] and links
+     * [pinId] to it. [name]/[subType] are required by the form before this is ever called; this
+     * function itself doesn't re-validate (`ui/InspectorPanel.kt` only enables its submit button
+     * once [EntryFields.validateExtra] and a non-blank name both pass).
+     */
+    fun stageEntry(
+        pinId: String,
+        category: EntryCategory,
+        subType: String,
+        name: String,
+        zone: String?,
+        description: String,
+        extra: Map<String, String>,
+        imageFile: File?,
+    ) {
+        pushUndo()
+        updateState { current ->
+            val pin = current.draftPins.find { it.id == pinId } ?: return@updateState current
+            val existingDraftId = (pin.entry as? EntrySource.Draft)?.id
+            val entryId = existingDraftId ?: UUID.randomUUID().toString()
+            val entry = DraftEntry(
+                id = entryId,
+                category = category,
+                subType = subType,
+                name = name,
+                zone = zone,
+                description = description,
+                extra = extra,
+                imageFile = imageFile,
+            )
+            val newEntries = if (existingDraftId != null) {
+                current.draftEntries.map { if (it.id == existingDraftId) entry else it }
+            } else {
+                current.draftEntries + entry
+            }
+            val newPins = current.draftPins.map {
+                if (it.id == pinId) it.copy(
+                    category = category,
+                    subType = subType,
+                    entry = EntrySource.Draft(entryId)
+                ) else it
+            }
+            current.copy(draftPins = newPins, draftEntries = newEntries)
+        }
+        persist()
+    }
+
+    /** EDT-55's "Use the existing entry instead" button: same as [linkExisting], named for where the UI calls it from. */
+    fun useExistingInstead(pinId: String, entry: EntrySummary) = linkExisting(pinId, entry)
+
+    private fun pruneUnusedDraftEntries(
+        pins: List<DraftPin>,
+        entries: List<DraftEntry>
+    ): List<DraftEntry> {
+        val referencedIds = pins.mapNotNull { (it.entry as? EntrySource.Draft)?.id }.toSet()
+        return entries.filter { it.id in referencedIds }
+    }
+
+    // --- Undo / redo (EDT-22) -------------------------------------------------------------------
+
+    private fun snapshot() =
+        UndoSnapshot(_state.value.draftPins, _state.value.draftEntries, _state.value.selectedPinIds)
+
+    private fun pushUndo() {
+        if (undoStack.size >= MaxUndoSteps) undoStack.removeFirst()
+        undoStack.addLast(snapshot())
+        redoStack.clear()
+        updateState { it.copy(canUndo = true, canRedo = false) }
+    }
+
+    private fun applySnapshot(target: UndoSnapshot) {
+        updateState {
+            it.copy(
+                draftPins = target.pins,
+                draftEntries = target.entries,
+                selectedPinIds = target.selectedPinIds,
+                canUndo = undoStack.isNotEmpty(),
+                canRedo = redoStack.isNotEmpty(),
+            )
+        }
+        persist()
+    }
+
+    fun undo() {
+        val previous = undoStack.removeLastOrNull() ?: return
+        redoStack.addLast(snapshot())
+        applySnapshot(previous)
+    }
+
+    fun redo() {
+        val next = redoStack.removeLastOrNull() ?: return
+        undoStack.addLast(snapshot())
+        applySnapshot(next)
+    }
+
+    // --- Discard draft (EDT-62: two clicks) ------------------------------------------------------
+
+    fun requestDiscardDraft() {
+        val current = _state.value
+        if (!current.discardArmed) {
+            updateState { it.copy(discardArmed = true) }
             return
         }
-        val dirtyPins = dirtyPinKeys.mapNotNull { pinsByEntry[it] }
-        if (dirtyPins.isNotEmpty()) mapPinRepository.upsertAll(dirtyPins)
-        deletedPinIds.forEach { mapPinRepository.softDelete(it) }
-        dirtyPinKeys.clear()
-        deletedPinIds.clear()
-        _statusMessage.value = "Saved."
+        pushUndo()
+        updateState {
+            it.copy(
+                draftPins = emptyList(),
+                draftEntries = emptyList(),
+                selectedPinIds = emptySet(),
+                activeEntry = null,
+                discardArmed = false,
+            )
+        }
+        persist()
+    }
+
+    fun cancelDiscardArm() {
+        updateState { it.copy(discardArmed = false) }
+    }
+
+    // --- Autosave ----------------------------------------------------------------------------
+
+    private var autosaveJob: Job? = null
+
+    /** EDT-61: writes `draft.json` after every change, debounced so a drag/undo burst doesn't hit disk every frame. */
+    private fun persist() {
+        updateState { it.copy(autosaveStatus = "Saving draft...") }
+        autosaveJob?.cancel()
+        autosaveJob = scope.launch {
+            delay(AutosaveDebounceMillis)
+            writeDraftNow()
+        }
+    }
+
+    private fun writeDraftNow() {
+        val current = _state.value
+        draftStore.save(DraftSnapshot(current.draftPins, current.draftEntries))
+        updateState { it.copy(autosaveStatus = "Draft autosaved to draft.json") }
+    }
+
+    /** Flushes any pending debounced write immediately — call this on window close so the last edit isn't lost. */
+    fun flushAutosave() {
+        autosaveJob?.cancel()
+        autosaveJob = null
+        writeDraftNow()
+    }
+
+    // --- Commit (EDT-70..77) --------------------------------------------------------------------
+
+    suspend fun commit(): CommitOutcome {
+        val current = _state.value
+        if (!current.isCommittable) {
+            return CommitOutcome.Failure("The draft isn't ready to commit yet.")
+        }
+        val mapVersion = current.mapConfig?.mapVersion
+            ?: return CommitOutcome.Failure("No map is loaded.")
+        val payload =
+            CommitPayloadBuilder.build(mapVersion, current.draftPins, current.draftEntries)
+        val pendingImages =
+            current.draftEntries.mapNotNull { entry -> entry.imageFile?.let { entry.id to it } }
+                .toMap()
+        return try {
+            val result = commitService.commit(payload, pendingImages)
+            draftStore.clear()
+            undoStack.clear()
+            redoStack.clear()
+            updateState {
+                it.copy(
+                    draftPins = emptyList(),
+                    draftEntries = emptyList(),
+                    selectedPinIds = emptySet(),
+                    activeEntry = null,
+                    discardArmed = false,
+                    canUndo = false,
+                    canRedo = false,
+                )
+            }
+            load()
+            CommitOutcome.Success(result)
+        } catch (e: Exception) {
+            CommitOutcome.Failure(e.message ?: "Commit failed.")
+        }
     }
 }

@@ -1,4 +1,4 @@
-package com.pamaz.vi.tools.mapeditor.data
+package com.pamaz.vi.tools.mapeditor.data.supabase
 
 import com.pamaz.vi.core.model.MapPin
 import io.github.jan.supabase.SupabaseClient
@@ -10,7 +10,7 @@ import kotlin.time.ExperimentalTime
 /**
  * Reads/writes `map_pins`. Reads work for anyone (RLS: `anon`/`authenticated` select, including
  * soft-deleted rows); every write here requires the caller to already hold a confirmed
- * [com.pamaz.vi.tools.mapeditor.auth.AdminSession] — enforced for real by `is_admin()`/RLS on the
+ * [com.pamaz.vi.tools.mapeditor.data.supabase.auth.AdminSession] — enforced for real by `is_admin()`/RLS on the
  * server, this repository just never exposes a write method the UI could call without one (see
  * `MapEditorState`, the only caller).
  */
@@ -25,11 +25,18 @@ class MapPinRepository(private val client: SupabaseClient) {
             }
         }.decodeList<MapPinRow>().mapNotNull { it.toMapPin() }
 
-    /** Upserts [pins] by their natural key `(category, entry_id)` — PLT-07's save, and PLT-06's import-after-confirmation. */
+    /**
+     * Upserts [pins] by `id` — PLT-07's save, and PLT-06's import-after-confirmation. Was keyed on
+     * `(category, entry_id)` until the step 5B extension dropped `map_pins_one_per_entry`
+     * (`20261021120001_map_pins_allow_multiple_per_entry.sql`) to allow several pins per entry;
+     * `id` is `map_pins`' real primary key and the only constraint `ON CONFLICT` can target now.
+     * CSV/JSON import rows still resolve to the same deterministic id per entry via [pinRowId], so
+     * re-importing the same row continues to update in place rather than duplicating.
+     */
     suspend fun upsertAll(pins: List<MapPin>) {
         if (pins.isEmpty()) return
         client.from("map_pins").upsert(pins.map { it.toUpsertRow() }) {
-            onConflict = "category,entry_id"
+            onConflict = "id"
         }
     }
 

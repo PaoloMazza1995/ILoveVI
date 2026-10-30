@@ -1,51 +1,48 @@
 package com.pamaz.vi.tools.mapeditor
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
+import com.pamaz.vi.tools.mapeditor.di.MapEditorBackend
 import com.pamaz.vi.tools.mapeditor.di.appModule
+import com.pamaz.vi.tools.mapeditor.error.UncaughtErrorReporter
 import com.pamaz.vi.tools.mapeditor.state.EditorState
 import com.pamaz.vi.tools.mapeditor.ui.MapEditorApp
-import com.pamaz.vi.tools.mapeditor.ui.UnsavedChangesDialog
-import kotlinx.coroutines.launch
 import org.koin.compose.KoinApplication
 import org.koin.compose.koinInject
-import kotlin.system.exitProcess
+import java.awt.Dimension
 
 /**
- * PLT-01..09: the desktop pin-placement tool (step 5B). A plain Koin application (see
- * `di/AppModule.kt`) — not a KMP module, so none of `build_logic`'s convention plugins apply here,
- * same as `:tools:tilegen`.
+ * The Map Editor Functional Analysis's window: fixed minimum 1280x800 (§4). Runs against
+ * **fake** services by default (`di/AppModule.kt`) — no `SUPABASE_URL`/`SUPABASE_ANON_KEY` needed
+ * to launch it — or the real `data.supabase` implementations, via `MAP_EDITOR_BACKEND=supabase`.
  */
 fun main() = application {
+    // Belt-and-suspenders alongside AppModule.kt's CoroutineExceptionHandler: anything thrown
+    // directly on a raw thread (not one of EditorState's own coroutines) still reaches
+    // UncaughtErrorDialog.kt instead of being silently swallowed or printed to a console no one's
+    // watching.
+    Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
+        UncaughtErrorReporter.report(
+            throwable
+        )
+    }
+
     KoinApplication(application = { modules(appModule) }) {
         val state = koinInject<EditorState>()
-        var exitRequested by remember { mutableStateOf(false) }
-        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        val backend = koinInject<MapEditorBackend>()
+        LaunchedEffect(Unit) { state.load() }
 
         Window(
-            onCloseRequest = {
-                if (state.hasUnsavedChanges) exitRequested = true else exitProcess(0)
-            },
-            title = "IloveVI Map Editor",
+            onCloseRequest = { state.flushAutosave(); exitApplication() },
+            title = "ILOVEVI MAP EDITOR",
+            state = rememberWindowState(position = WindowPosition(Alignment.Center)),
         ) {
-            MapEditorApp(state = state)
-
-            if (exitRequested) {
-                UnsavedChangesDialog(
-                    onSaveAndExit = {
-                        scope.launch {
-                            state.save()
-                            exitProcess(0)
-                        }
-                    },
-                    onDiscardAndExit = { exitProcess(0) },
-                    onCancel = { exitRequested = false },
-                )
-            }
+            window.minimumSize = Dimension(1280, 800)
+            MapEditorApp(state = state, backend = backend)
         }
     }
 }

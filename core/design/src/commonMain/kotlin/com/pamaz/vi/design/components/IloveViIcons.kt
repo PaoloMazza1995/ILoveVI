@@ -341,6 +341,190 @@ fun IconSettingsSliders(
     }
 }
 
+// --- Map Editor toolbar/dialog icons -------------------------------------------------------
+//
+// Not from a preview.html mockup (the Map Editor Functional Analysis's own schematic names these
+// by role, not by exact glyph): conventional icon shapes at this system's standard 24x24 viewBox
+// and 2px stroke, matching every other hand-drawn icon in this file.
+
+/** Place mode: a crosshair — four short ticks around a hollow center circle. */
+@Composable
+fun IconCrosshair(
+    modifier: Modifier = Modifier,
+    tint: Color = IloveViColors.ink,
+    size: Dp = 24.dp,
+    strokeWidth: Dp = 2.dp,
+) {
+    Canvas(modifier.size(size)) {
+        val s = size.toPx() / NATIVE_BOX
+        val stroke = iconStroke(strokeWidth.toPx())
+        drawCircle(tint, radius = 3f * s, center = Offset(12f * s, 12f * s), style = stroke)
+        val ticks = Path().apply {
+            moveTo(12f * s, 2f * s); lineTo(12f * s, 6f * s)
+            moveTo(12f * s, 18f * s); lineTo(12f * s, 22f * s)
+            moveTo(2f * s, 12f * s); lineTo(6f * s, 12f * s)
+            moveTo(18f * s, 12f * s); lineTo(22f * s, 12f * s)
+        }
+        drawPath(ticks, color = tint, style = stroke)
+    }
+}
+
+/** Select mode: a pointer-cursor arrow. */
+@Composable
+fun IconCursorArrow(
+    modifier: Modifier = Modifier,
+    tint: Color = IloveViColors.ink,
+    size: Dp = 24.dp,
+    strokeWidth: Dp = 2.dp,
+) {
+    Canvas(modifier.size(size)) {
+        val s = size.toPx() / NATIVE_BOX
+        val path = Path().apply {
+            moveTo(5f * s, 3f * s)
+            lineTo(5f * s, 19f * s)
+            lineTo(9.5f * s, 15f * s)
+            lineTo(13f * s, 21.5f * s)
+            lineTo(15.5f * s, 20f * s)
+            lineTo(12f * s, 13.5f * s)
+            lineTo(18f * s, 13f * s)
+            close()
+        }
+        drawPath(
+            path,
+            color = tint,
+            style = Stroke(
+                width = strokeWidth.toPx(),
+                join = StrokeJoin.Round,
+                cap = StrokeCap.Round
+            ),
+        )
+    }
+}
+
+/** Undo: a counter-clockwise arrow (a left-pointing arrowhead on a curved stroke). */
+@Composable
+fun IconUndo(
+    modifier: Modifier = Modifier,
+    tint: Color = IloveViColors.ink,
+    size: Dp = 24.dp,
+    strokeWidth: Dp = 2.dp,
+) {
+    Canvas(modifier.size(size)) {
+        val s = size.toPx() / NATIVE_BOX
+        val stroke = iconStroke(strokeWidth.toPx())
+        drawArc(
+            color = tint,
+            startAngle = 0f,
+            sweepAngle = 260f,
+            useCenter = false,
+            topLeft = Offset(5f * s, 5f * s),
+            size = Size(14f * s, 14f * s),
+            style = stroke,
+        )
+        val arrowhead = Path().apply {
+            moveTo(5f * s, 5f * s)
+            lineTo(5f * s, 10f * s)
+            lineTo(10f * s, 10f * s)
+        }
+        drawPath(arrowhead, color = tint, style = stroke)
+    }
+}
+
+/** Redo: [IconUndo] mirrored horizontally. */
+@Composable
+fun IconRedo(
+    modifier: Modifier = Modifier,
+    tint: Color = IloveViColors.ink,
+    size: Dp = 24.dp,
+    strokeWidth: Dp = 2.dp,
+) {
+    Canvas(modifier.size(size)) {
+        val s = size.toPx() / NATIVE_BOX
+        val stroke = iconStroke(strokeWidth.toPx())
+        drawArc(
+            color = tint,
+            startAngle = 180f,
+            sweepAngle = 260f,
+            useCenter = false,
+            topLeft = Offset(5f * s, 5f * s),
+            size = Size(14f * s, 14f * s),
+            style = stroke,
+        )
+        val arrowhead = Path().apply {
+            moveTo(19f * s, 5f * s)
+            lineTo(19f * s, 10f * s)
+            lineTo(14f * s, 10f * s)
+        }
+        drawPath(arrowhead, color = tint, style = stroke)
+    }
+}
+
+/** "Saved" (show/hide database pins) toggle: an open eye. */
+@Composable
+fun IconEye(
+    modifier: Modifier = Modifier,
+    tint: Color = IloveViColors.ink,
+    size: Dp = 24.dp,
+    strokeWidth: Dp = 2.dp,
+) {
+    Canvas(modifier.size(size)) {
+        val s = size.toPx() / NATIVE_BOX
+        val stroke = iconStroke(strokeWidth.toPx())
+        val lids = Path().apply {
+            moveTo(2f * s, 12f * s)
+            cubicTo(5f * s, 6f * s, 19f * s, 6f * s, 22f * s, 12f * s)
+            cubicTo(19f * s, 18f * s, 5f * s, 18f * s, 2f * s, 12f * s)
+            close()
+        }
+        drawPath(lids, color = tint, style = stroke)
+        drawCircle(tint, radius = 3f * s, center = Offset(12f * s, 12f * s), style = stroke)
+    }
+}
+
+/** Close/remove ("x") — the active-entry banner's close button, an attached image's remove button. */
+@Composable
+fun IconClose(
+    modifier: Modifier = Modifier,
+    tint: Color = IloveViColors.ink,
+    size: Dp = 24.dp,
+    strokeWidth: Dp = 2.dp,
+) {
+    Canvas(modifier.size(size)) {
+        val s = size.toPx() / NATIVE_BOX
+        val path = Path().apply {
+            moveTo(6f * s, 6f * s); lineTo(18f * s, 18f * s)
+            moveTo(18f * s, 6f * s); lineTo(6f * s, 18f * s)
+        }
+        drawPath(path, color = tint, style = iconStroke(strokeWidth.toPx()))
+    }
+}
+
+/** Warning triangle — the header's "N pins need an entry" chip, the non-admin banner. */
+@Composable
+fun IconWarningTriangle(
+    modifier: Modifier = Modifier,
+    tint: Color = IloveViColors.warningYellow,
+    size: Dp = 24.dp,
+    strokeWidth: Dp = 2.dp,
+) {
+    Canvas(modifier.size(size)) {
+        val s = size.toPx() / NATIVE_BOX
+        val stroke = iconStroke(strokeWidth.toPx())
+        val triangle = Path().apply {
+            moveTo(12f * s, 3.5f * s)
+            lineTo(21.5f * s, 20f * s)
+            lineTo(2.5f * s, 20f * s)
+            close()
+        }
+        drawPath(triangle, color = tint, style = stroke)
+        val exclamation = Path().apply {
+            moveTo(12f * s, 9.5f * s); lineTo(12f * s, 14f * s)
+        }
+        drawPath(exclamation, color = tint, style = stroke)
+        drawCircle(tint, radius = 1f * s, center = Offset(12f * s, 17f * s))
+    }
+}
+
 // --- Category/sub-type icon set (step I) -----------------------------------------------------
 //
 // Unlike the icons above (plain Canvas-drawing composables, each hardcoded to one specific use),

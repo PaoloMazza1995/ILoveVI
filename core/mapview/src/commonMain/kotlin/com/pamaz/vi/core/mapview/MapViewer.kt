@@ -42,6 +42,12 @@ import com.pamaz.vi.core.model.map.TileScheme
  *
  * [MapContent.Tiles] assumes 256px tiles (matching [TileScheme]'s default and `:tools:tilegen`'s
  * output) since [MapConfig] doesn't carry a tile size today.
+ *
+ * [backgroundDragSelectEnabled] opts into rectangle (marquee) select for a drag that starts on
+ * empty background, reporting it via [onBackgroundDragStart]/[onBackgroundDrag]/
+ * [onBackgroundDragEnd] instead of panning — off by default (zero behavior change for every
+ * existing caller); see `backgroundDragSelectGestures`'s KDoc in `MapGestures.kt` for exactly how
+ * it coexists with tap/pan/zoom and per-pin drag.
  */
 @Composable
 fun MapViewer(
@@ -53,6 +59,10 @@ fun MapViewer(
     onClusterTap: (MapViewerCluster) -> Unit = {},
     onMapTap: (NormalizedPoint) -> Unit = {},
     modifier: Modifier = Modifier,
+    backgroundDragSelectEnabled: Boolean = false,
+    onBackgroundDragStart: (NormalizedPoint) -> Unit = {},
+    onBackgroundDrag: (NormalizedPoint) -> Unit = {},
+    onBackgroundDragEnd: () -> Unit = {},
     pinContent: @Composable (pin: MapViewerPin, selected: Boolean) -> Unit = { pin, selected ->
         DefaultMapViewerPinContent(pin, selected)
     },
@@ -110,6 +120,9 @@ fun MapViewer(
     val latestOnPinTap by rememberUpdatedState(onPinTap)
     val latestOnClusterTap by rememberUpdatedState(onClusterTap)
     val latestOnMapTap by rememberUpdatedState(onMapTap)
+    val latestOnBackgroundDragStart by rememberUpdatedState(onBackgroundDragStart)
+    val latestOnBackgroundDrag by rememberUpdatedState(onBackgroundDrag)
+    val latestOnBackgroundDragEnd by rememberUpdatedState(onBackgroundDragEnd)
 
     Box(
         modifier = modifier
@@ -124,6 +137,10 @@ fun MapViewer(
                 onClusterTap = { cluster -> latestOnClusterTap(cluster) },
                 onMapTap = { point -> latestOnMapTap(point) },
                 coroutineScope = coroutineScope,
+                backgroundDragSelectEnabled = backgroundDragSelectEnabled,
+                onBackgroundDragStart = { point -> latestOnBackgroundDragStart(point) },
+                onBackgroundDrag = { point -> latestOnBackgroundDrag(point) },
+                onBackgroundDragEnd = { latestOnBackgroundDragEnd() },
             )
             .semantics { contentDescription = "Map. Drag to pan, pinch or double-tap to zoom." },
     ) {
@@ -164,6 +181,10 @@ fun MapViewer(
     onPinTap: (String) -> Unit = {},
     onMapTap: (NormalizedPoint) -> Unit = {},
     modifier: Modifier = Modifier,
+    backgroundDragSelectEnabled: Boolean = false,
+    onBackgroundDragStart: (NormalizedPoint) -> Unit = {},
+    onBackgroundDrag: (NormalizedPoint) -> Unit = {},
+    onBackgroundDragEnd: () -> Unit = {},
     pinContent: @Composable (pin: MapViewerPin, selected: Boolean) -> Unit = { pin, selected ->
         DefaultMapViewerPinContent(pin, selected)
     },
@@ -175,6 +196,10 @@ fun MapViewer(
     onPinTap = onPinTap,
     onMapTap = onMapTap,
     modifier = modifier,
+    backgroundDragSelectEnabled = backgroundDragSelectEnabled,
+    onBackgroundDragStart = onBackgroundDragStart,
+    onBackgroundDrag = onBackgroundDrag,
+    onBackgroundDragEnd = onBackgroundDragEnd,
     pinContent = pinContent,
 )
 

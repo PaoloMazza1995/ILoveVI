@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -58,6 +59,7 @@ fun IloveViListRow(
     thumbnailShape: Shape = IloveViShapes.radiusXs,
     trailing: IloveViListRowTrailing = IloveViListRowTrailing.Chevron,
     showDivider: Boolean = true,
+    titleColor: Color = IloveViColors.ink,
     onClick: (() -> Unit)? = null,
     thumbnail: @Composable () -> Unit,
 ) {
@@ -100,7 +102,7 @@ fun IloveViListRow(
         ) {
             Text(
                 text = title,
-                color = IloveViColors.ink,
+                color = titleColor,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

@@ -1,4 +1,4 @@
-package com.pamaz.vi.tools.mapeditor.auth
+package com.pamaz.vi.tools.mapeditor.model
 
 /**
  * An established, confirmed-admin session (PLT-01). Lives only in memory for this run — closing

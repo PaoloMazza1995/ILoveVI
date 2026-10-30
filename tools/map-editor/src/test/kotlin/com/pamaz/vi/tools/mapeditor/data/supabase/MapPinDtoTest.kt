@@ -1,4 +1,4 @@
-package com.pamaz.vi.tools.mapeditor.data
+package com.pamaz.vi.tools.mapeditor.data.supabase
 
 import com.pamaz.vi.core.model.EntryRef
 import com.pamaz.vi.core.model.MapPin
