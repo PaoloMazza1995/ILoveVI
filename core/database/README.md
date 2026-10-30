@@ -93,6 +93,17 @@ internal `*Impl` class and exposed through `databaseModule` (`com.pamaz.vi.core.
   and every DAO above as `single`s. It expects a `PlatformContext` single to already be bound by
   whichever app module includes it (see "Platform drivers" below) — this module cannot construct one
   itself, since only the platform app knows what a real Android `Context` is.
+- **`dao/DaoFactory.kt`** (added for step 7B/`:core:data`): one-line public factories
+  (`createCatalogDao(database)`, `createMapDao(database)`, ...) for each DAO's `internal` `*Impl`
+  class, for a caller that already holds a real `IloveViDatabase` but isn't going through
+  `databaseModule`/Koin — `:core:data`'s own tests, which build an in-memory `IloveViDatabase`
+  directly. `databaseModule` could use these too but doesn't need to.
+- **`DatabaseTransactions.kt`** (added for step 7B): `suspend fun IloveViDatabase.inTransaction(body:
+  suspend () -> Unit)`, a thin bridge over `Transacter.transaction { }` (which takes a plain, non-
+  `suspend` lambda) for a caller — `:core:data`'s `ContentSyncer`/`SeedImporter` — that needs
+  several of this module's own `suspend` DAO write methods to commit as one real SQL transaction.
+  See that file's own KDoc for why the `runBlocking` inside it is safe here specifically (nothing
+  any DAO write method does ever actually suspends).
 
 ## Platform drivers
 

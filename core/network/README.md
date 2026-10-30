@@ -152,6 +152,13 @@ actually driven through a real `Postgrest` call surfaces as `RestException` inst
 `SupabaseConfig.fromBuildConfig()`), plus one single per `*RemoteDataSource` interface above.
 Nothing else — no repository, no sync engine, no database wiring; that's `:core:data`.
 
+**`datasource/RemoteDataSourceFactory.kt`** (added for step 7B): one-line public factories
+(`createWeaponRemoteDataSource(client)`, ...) for each data source's `internal` `*Impl` class, for a
+caller that already holds a `SupabaseClient` but isn't going through `networkModule`/Koin —
+`:core:data`'s own `LocalSupabaseAcceptanceTest`, which points at a local Supabase stack rather than
+the build-time-configured production client `networkModule` wires up. `networkModule` could use
+these too but doesn't need to.
+
 ## Tests
 
 `commonTest` (JVM + iOS simulator, this repo's established scope):
