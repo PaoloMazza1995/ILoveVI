@@ -17,7 +17,6 @@ import ilovevi.shared.generated.resources.app_map_selected_entry_label
 import ilovevi.shared.generated.resources.app_open_compilation_action
 import ilovevi.shared.generated.resources.app_open_filters_action
 import ilovevi.shared.generated.resources.app_stub_placeholder
-import ilovevi.shared.generated.resources.app_tab_catalog_title
 import ilovevi.shared.generated.resources.app_tab_map_title
 import ilovevi.shared.generated.resources.app_tab_music_title
 import ilovevi.shared.generated.resources.app_tab_news_title
@@ -55,24 +54,6 @@ internal fun MapTabScreen(selectedEntryId: String?, onOpenFilters: () -> Unit) {
                 variant = IloveViButtonVariant.Secondary,
             )
         }
-    }
-}
-
-/** The Catalog tab. [onOpenDetail] (category, entryId) opens the Detail secondary destination. */
-@Composable
-internal fun CatalogStubScreen(onOpenDetail: (category: String, entryId: String) -> Unit) {
-    TabStubScreen(
-        title = stringResource(Res.string.app_tab_catalog_title),
-        placeholder = stringResource(Res.string.app_stub_placeholder),
-    ) {
-        // No real content exists before the game's release; this demonstrates the Detail
-        // navigation contract (category + entryId, matching EntryRef's shape) with placeholder
-        // values rather than leaving "Show on map" unreachable from this step's stub screens.
-        IloveViButton(
-            text = "Open sample entry",
-            onClick = { onOpenDetail("WEAPON", "sample-weapon-1") },
-            variant = IloveViButtonVariant.Secondary,
-        )
     }
 }
 

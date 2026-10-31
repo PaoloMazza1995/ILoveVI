@@ -80,12 +80,26 @@ trying it) that combination currently fails on a module using the new
 AGP KMP Android compilation type and the one the KSP Gradle plugin still expects) — the same target
 type `shared` uses. Rather than fight that incompatibility for an "empty aggregate is fine now"
 module, `shared` uses **plain Koin** (`koin-core` + `koin-compose`, no annotations/KSP):
-`di/AppKoinModules.kt` has one empty `module { }` per Gradle module that might need DI later,
-aggregated into `allAppKoinModules`, started from `App()` itself (guarded by catching
-`KoinApplicationAlreadyStartedException`, so a recomposition/configuration change never crashes)
-— so `MainActivity`/the iOS `MainViewController`/`webApp`'s `main` need no Koin-specific code of
-their own. Revisit `kmm-koin-plugin`/koin-annotations once there's a real DI graph worth the
-annotation-scanning ceremony, or once that AGP/KSP incompatibility is resolved upstream.
+`di/AppKoinModules.kt`'s `allAppKoinModules` aggregates every real module's Koin module, started
+from `App()` itself (guarded by catching `KoinApplicationAlreadyStartedException`, so a
+recomposition/configuration change never crashes) — so `MainActivity`/the iOS
+`MainViewController`/`webApp`'s `main` need no Koin-specific code of their own. Revisit
+`kmm-koin-plugin`/koin-annotations once there's a real DI graph worth the annotation-scanning
+ceremony, or once that AGP/KSP incompatibility is resolved upstream.
+
+**Updated in step 9**: the original empty-placeholder `module { }` per Gradle module is gone,
+replaced by the real `databaseModule`/`networkModule`/`dataModule`/`catalogFeatureModule` — each of
+those three `core:*` modules' own README said "not wired in until a consuming step needs it";
+`:feature:catalog` is that step. The one thing this needed that nothing before it did: a real
+Android `Context` for `databaseModule`'s `PlatformContext` single. `di/PlatformContextModule.kt`
+(`expect` in *true* `commonMain`, `actual` in *true* `androidMain`/`iosMain`/`jsMain`/
+`wasmJsMain` — not the `src/appMain` alias above, since `expect`/`actual` need genuinely different
+compilations) is `@Composable` specifically so its Android `actual` can read
+`androidx.compose.ui.platform.LocalContext.current` — the only place in this app to get a real
+`Context` from, since there's no custom `Application` subclass and `App()`'s own signature stays
+untouched (same "zero platform-specific code in the platform entry points" invariant this file's
+intro already states). `App()` reads it once per composition and folds it into
+`allAppKoinModules(platformContextModule)`.
 
 ### Debug-only Map sample
 

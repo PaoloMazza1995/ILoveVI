@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="catalog_title">Catalog</string>
+    <string name="catalog_category_weapons">Weapons</string>
+    <string name="catalog_category_vehicles">Vehicles</string>
+    <string name="catalog_category_items">Items</string>
+    <string name="catalog_search_placeholder">Search by name or area</string>
+    <!-- "%1$s" is the sub-type (e.g. "Pistol"), "%2$s" the zone (e.g. "Vinewood") — CAT-01's "type - zone". -->
+    <string name="catalog_row_subtitle_with_zone">%1$s - %2$s</string>
+    <string name="catalog_empty_title">No results</string>
+    <string name="catalog_empty_hint">Try a different name or area.</string>
+
+    <string name="detail_back_content_description">Back</string>
+    <string name="detail_image_not_available">No image available</string>
+    <string name="detail_where_to_find_it">Where to find it</string>
+    <string name="detail_location_not_available">Location not available yet</string>
+    <string name="detail_mini_map_content_description">Mini-map showing this entry's location</string>
+    <string name="detail_show_on_map">Show on map</string>
+    <string name="detail_not_found">This entry could not be found.</string>
+    <string name="detail_attribute_type">Type</string>
+    <string name="detail_attribute_price">Price</string>
+    <string name="detail_attribute_ammo">Ammo</string>
+</resources>

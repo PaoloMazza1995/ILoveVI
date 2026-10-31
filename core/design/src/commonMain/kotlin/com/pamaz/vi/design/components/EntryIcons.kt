@@ -8,6 +8,21 @@ import com.pamaz.vi.core.model.Vehicle
 import com.pamaz.vi.core.model.VehicleType
 import com.pamaz.vi.core.model.Weapon
 import com.pamaz.vi.core.model.WeaponType
+import com.pamaz.vi.design.IloveViCategory
+import ilovevi.core.design.generated.resources.Res
+import ilovevi.core.design.generated.resources.design_subtype_ammo
+import ilovevi.core.design.generated.resources.design_subtype_armor
+import ilovevi.core.design.generated.resources.design_subtype_boat
+import ilovevi.core.design.generated.resources.design_subtype_car
+import ilovevi.core.design.generated.resources.design_subtype_explosive
+import ilovevi.core.design.generated.resources.design_subtype_helicopter
+import ilovevi.core.design.generated.resources.design_subtype_machine_gun
+import ilovevi.core.design.generated.resources.design_subtype_melee
+import ilovevi.core.design.generated.resources.design_subtype_motorcycle
+import ilovevi.core.design.generated.resources.design_subtype_pistol
+import ilovevi.core.design.generated.resources.design_subtype_plane
+import ilovevi.core.design.generated.resources.design_subtype_rifle
+import org.jetbrains.compose.resources.StringResource
 
 /**
  * Maps core:model's category/sub-type enums to the icon set in `IloveViIcons.kt` (step I). Every
@@ -22,6 +37,17 @@ fun EntryCategory.icon(): IloveViIcon = when (this) {
     EntryCategory.WEAPON -> IloveViIcon.PISTOL
     EntryCategory.VEHICLE -> IloveViIcon.CAR
     EntryCategory.ITEM -> IloveViIcon.BOX
+}
+
+/**
+ * The [IloveViCategory] (color + — unlocalized — label) matching a `:core:model` [EntryCategory] —
+ * added for `:feature:catalog`'s chips/badges/thumbnails, which all need this module's category
+ * color but only ever carry the `:core:model` enum, never [IloveViCategory] itself.
+ */
+fun EntryCategory.toIloveViCategory(): IloveViCategory = when (this) {
+    EntryCategory.WEAPON -> IloveViCategory.Weapons
+    EntryCategory.VEHICLE -> IloveViCategory.Vehicles
+    EntryCategory.ITEM -> IloveViCategory.Items
 }
 
 /** One icon per [WeaponType] value. */
@@ -58,4 +84,40 @@ fun Entry.icon(): IloveViIcon = when (this) {
     is Weapon -> subType.icon()
     is Vehicle -> subType.icon()
     is Item -> subType.icon()
+}
+
+/**
+ * The same 12 sub-type name strings `IloveViIcon`'s own `contentDescription` uses (step I),
+ * exposed here as the human-readable *display* label a feature screen renders next to the icon
+ * (`:feature:catalog`'s "type - zone" row subtitle and attributes table) — not duplicated as a
+ * second set of strings, since they're already exactly these words.
+ */
+fun WeaponType.labelRes(): StringResource = when (this) {
+    WeaponType.PISTOL -> Res.string.design_subtype_pistol
+    WeaponType.RIFLE -> Res.string.design_subtype_rifle
+    WeaponType.MACHINE_GUN -> Res.string.design_subtype_machine_gun
+    WeaponType.MELEE -> Res.string.design_subtype_melee
+    WeaponType.EXPLOSIVE -> Res.string.design_subtype_explosive
+}
+
+/** One label resource per [VehicleType] value — see [WeaponType.labelRes]'s KDoc. */
+fun VehicleType.labelRes(): StringResource = when (this) {
+    VehicleType.CAR -> Res.string.design_subtype_car
+    VehicleType.MOTORCYCLE -> Res.string.design_subtype_motorcycle
+    VehicleType.BOAT -> Res.string.design_subtype_boat
+    VehicleType.HELICOPTER -> Res.string.design_subtype_helicopter
+    VehicleType.PLANE -> Res.string.design_subtype_plane
+}
+
+/** One label resource per [ItemType] value — see [WeaponType.labelRes]'s KDoc. */
+fun ItemType.labelRes(): StringResource = when (this) {
+    ItemType.AMMO -> Res.string.design_subtype_ammo
+    ItemType.ARMOR -> Res.string.design_subtype_armor
+}
+
+/** The sub-type label resource of any [Entry] — see [Entry.icon]'s KDoc for why this `when` is exhaustive without `else`. */
+fun Entry.labelRes(): StringResource = when (this) {
+    is Weapon -> subType.labelRes()
+    is Vehicle -> subType.labelRes()
+    is Item -> subType.labelRes()
 }

@@ -28,12 +28,17 @@ own implementation detail and could be swapped without any feature module notici
   with their entry's display name).
 - **`SettingsRepository`**: user preferences.
 
-`MusicRepository`/`MapRepository`/`SettingsRepository` reuse `:core:database`'s own small view types
-as-is — `Compilation`, `CompilationSongEntry`, `MapPinWithEntryName`, `Preferences` — rather than
-duplicating equivalent data classes in this module. A deliberate choice, flagged here since it's a
-judgment call: these are already plain, framework-free data holders (no SqlDelight types leak
-through them), so duplicating them would be boilerplate with no real decoupling benefit;
-`:core:model` was understood as the one place the roadmap step asked not to re-shape.
+`MusicRepository`/`MapRepository`/`SettingsRepository` each have their own `Compilation`/
+`CompilationSongEntry`/`MapPinWithEntryName`/`Preferences` (`repository/RepositoryTypes.kt`), with
+the `*RepositoryImpl`s mapping from `:core:database`'s rows into them. **Updated during step 9**:
+this module originally reused `:core:database`'s own identically-shaped types here directly,
+reasoning they were "already a clean abstraction, not raw persistence detail" — that turned out to
+be wrong in practice. `:core:database` is only an `implementation` (not `api`) dependency of this
+module, so none of its types are visible to a consumer that only depends on `:core:data` — a feature
+module implementing one of these interfaces (in a test fake, say) would need a direct
+`:core:database` dependency just to spell the return type, exactly the leak this module exists to
+prevent. Found and fixed while wiring `:feature:catalog` (step 9), which hit it immediately on
+`MapPinWithEntryName`; see that module's own README for the full story.
 
 ## `ContentSyncer`
 

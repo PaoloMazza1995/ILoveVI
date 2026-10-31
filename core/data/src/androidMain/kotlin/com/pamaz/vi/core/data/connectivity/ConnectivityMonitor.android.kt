@@ -15,14 +15,24 @@ actual class PlatformConnectivityMonitor actual constructor(
     private val context: PlatformContext,
 ) : ConnectivityMonitor {
 
+    /**
+     * Requires `android.permission.ACCESS_NETWORK_STATE` (declared in `androidApp`'s manifest —
+     * a library module here has no manifest of its own to declare it from). If that permission is
+     * ever missing — a real crash this module caused once, `SecurityException: ... Neither user
+     * ... nor current process has android.permission.ACCESS_NETWORK_STATE` — this falls back to a
+     * single `true` emission (assume online) rather than letting the exception propagate and take
+     * down the whole app: a wrong connectivity *signal* should never be worse than no signal.
+     */
     actual override val isOnline: Flow<Boolean> = callbackFlow {
         val connectivityManager =
             context.context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-        fun currentlyOnline(): Boolean {
+        fun currentlyOnline(): Boolean = try {
             val capabilities =
                 connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
-            return capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+            capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        } catch (e: SecurityException) {
+            true
         }
 
         val callback = object : ConnectivityManager.NetworkCallback() {
@@ -43,7 +53,11 @@ actual class PlatformConnectivityMonitor actual constructor(
         }
 
         trySend(currentlyOnline())
-        connectivityManager.registerNetworkCallback(NetworkRequest.Builder().build(), callback)
-        awaitClose { connectivityManager.unregisterNetworkCallback(callback) }
+        try {
+            connectivityManager.registerNetworkCallback(NetworkRequest.Builder().build(), callback)
+            awaitClose { connectivityManager.unregisterNetworkCallback(callback) }
+        } catch (e: SecurityException) {
+            awaitClose { }
+        }
     }.distinctUntilChanged()
 }

@@ -5,9 +5,9 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.savedstate.read
-import com.pamaz.vi.screens.CatalogStubScreen
+import com.pamaz.vi.feature.catalog.catalog.CatalogScreen
+import com.pamaz.vi.feature.catalog.detail.DetailScreen
 import com.pamaz.vi.screens.CompilationScreen
-import com.pamaz.vi.screens.DetailScreen
 import com.pamaz.vi.screens.MapFiltersScreen
 import com.pamaz.vi.screens.MapTabScreen
 import com.pamaz.vi.screens.MusicStubScreen
@@ -32,7 +32,7 @@ internal fun appFeatureRegistrations(
         )
     },
     FeatureRegistration(AppDestination.Tab.Catalog) {
-        CatalogStubScreen(
+        CatalogScreen(
             onOpenDetail = { category, entryId ->
                 navController.navigate(AppDestination.Secondary.Detail.route(category, entryId))
             },

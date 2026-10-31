@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="catalog_title">Catalogo</string>
+    <string name="catalog_category_weapons">Armi</string>
+    <string name="catalog_category_vehicles">Veicoli</string>
+    <string name="catalog_category_items">Oggetti</string>
+    <string name="catalog_search_placeholder">Cerca per nome o zona</string>
+    <string name="catalog_row_subtitle_with_zone">%1$s - %2$s</string>
+    <string name="catalog_empty_title">Nessun risultato</string>
+    <string name="catalog_empty_hint">Prova un nome o una zona diversi.</string>
+
+    <string name="detail_back_content_description">Indietro</string>
+    <string name="detail_image_not_available">Nessuna immagine disponibile</string>
+    <string name="detail_where_to_find_it">Dove si trova</string>
+    <string name="detail_location_not_available">Posizione non ancora disponibile</string>
+    <string name="detail_mini_map_content_description">Mini mappa con la posizione di questo elemento</string>
+    <string name="detail_show_on_map">Mostra sulla mappa</string>
+    <string name="detail_not_found">Impossibile trovare questo elemento.</string>
+    <string name="detail_attribute_type">Tipo</string>
+    <string name="detail_attribute_price">Prezzo</string>
+    <string name="detail_attribute_ammo">Munizioni</string>
+</resources>

@@ -1,21 +1,19 @@
 package com.pamaz.vi.core.data.repository
 
-import com.pamaz.vi.core.database.dao.Compilation
-import com.pamaz.vi.core.database.dao.CompilationSongEntry
 import com.pamaz.vi.core.database.dao.MusicDao
 import com.pamaz.vi.core.model.Song
 import com.pamaz.vi.core.model.SongId
 import com.pamaz.vi.core.model.Station
 import com.pamaz.vi.core.model.StationId
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlin.time.Clock
 
 /**
  * Stations/songs (read-only, synced content) and compilations (local-only, user-owned) — see
  * `CatalogRepository`'s KDoc for why this wraps `:core:database` rather than a screen depending on
- * it directly. [Compilation]/[CompilationSongEntry] are `:core:database`'s own plain view types
- * (not raw rows, not SqlDelight-generated types), reused here as-is rather than duplicated —
- * a deliberate choice, flagged in this module's README.
+ * it directly. [Compilation]/[CompilationSongEntry] are this module's own types (see
+ * [RepositoryTypes.kt]'s KDoc for why they aren't `:core:database`'s).
  */
 interface MusicRepository {
     fun stations(): Flow<List<Station>>
@@ -54,10 +52,15 @@ internal class MusicRepositoryImpl(private val musicDao: MusicDao) : MusicReposi
     override fun searchSongs(stationId: StationId?, query: String?): Flow<List<Song>> =
         musicDao.searchSongs(stationId, query)
 
-    override fun compilations(): Flow<List<Compilation>> = musicDao.compilations()
-    override fun compilation(id: String): Flow<Compilation?> = musicDao.compilation(id)
+    override fun compilations(): Flow<List<Compilation>> =
+        musicDao.compilations().map { list -> list.map { it.toRepositoryCompilation() } }
+
+    override fun compilation(id: String): Flow<Compilation?> =
+        musicDao.compilation(id).map { it?.toRepositoryCompilation() }
+
     override fun songsForCompilation(compilationId: String): Flow<List<CompilationSongEntry>> =
         musicDao.songsForCompilation(compilationId)
+            .map { entries -> entries.map { CompilationSongEntry(it.song, it.position) } }
 
     override suspend fun createCompilation(name: String, spotifyPlaylistId: String?): String {
         val id = "compilation-${Clock.System.now().toEpochMilliseconds()}"
@@ -79,3 +82,10 @@ internal class MusicRepositoryImpl(private val musicDao: MusicDao) : MusicReposi
     override suspend fun reorderCompilation(compilationId: String, orderedSongIds: List<SongId>) =
         musicDao.reorderCompilation(compilationId, orderedSongIds)
 }
+
+private fun com.pamaz.vi.core.database.dao.Compilation.toRepositoryCompilation() = Compilation(
+    id = id,
+    name = name,
+    createdAt = createdAt,
+    spotifyPlaylistId = spotifyPlaylistId,
+)

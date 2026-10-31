@@ -74,6 +74,15 @@ kotlin {
 
             implementation(project(":core:design"))
             implementation(project(":core:mapview"))
+
+            // Step 9's own first real consumer of the data layer: :core:database/:core:network
+            // provide databaseModule/networkModule, :core:data provides dataModule — all three are
+            // wired into allAppKoinModules below for the first time (previously unwired, per their
+            // own READMEs, "until a consuming step needs it" — this is that step).
+            implementation(project(":core:database"))
+            implementation(project(":core:network"))
+            implementation(project(":core:data"))
+            implementation(project(":feature:catalog"))
         }
         androidMain {
             kotlin.srcDir("src/appMain/kotlin")
@@ -98,6 +107,10 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+            // Only for di/PlatformContextModule.kt's `expect fun rememberPlatformContextModule():
+            // Module` signature — koin-core is fully multiplatform (js/wasmJs included), unlike
+            // core:design/core:mapview, so this one addition is safe in true commonMain.
+            implementation(libs.koin.core)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- :core:network's Ktor/OkHttp calls to Supabase (INTERNET) and :core:data's
+         ConnectivityMonitor, which queries ConnectivityManager directly (ACCESS_NETWORK_STATE —
+         without it, ConnectivityManager.getNetworkCapabilities/registerNetworkCallback throw
+         a SecurityException instead of just failing gracefully). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

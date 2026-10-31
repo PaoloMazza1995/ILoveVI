@@ -1,7 +1,6 @@
 package com.pamaz.vi.core.data.repository
 
 import com.pamaz.vi.core.data.testDatabase
-import com.pamaz.vi.core.database.dao.Preferences
 import com.pamaz.vi.core.database.dao.createPreferencesDao
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
