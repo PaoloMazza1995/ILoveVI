@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.semantics
 import com.pamaz.vi.core.model.MapConfig
 import com.pamaz.vi.core.model.NormalizedPoint
 import com.pamaz.vi.core.model.map.TileScheme
+import kotlin.math.max
 
 /**
  * The shared, read-only map viewer used by both the placement tool and `feature:map` — this is
@@ -78,19 +79,57 @@ fun MapViewer(
     }
 
     val viewportSize = state.viewportSize
-    // Only [MapContent.SingleImage] needs this: its fit zoom depends on the viewport (unlike
-    // [MapContent.Tiles], where zoom 0 is always "the whole map" by [TileScheme]'s own convention
-    // — see [TileScheme.minZoom]'s KDoc), so it can't simply be MapViewer's default `initialZoom`.
-    // Applied once per [content] instance (not keyed on [viewportSize], so a later resize/rotation
-    // never overrides zoom/pan the user already chose) the first time the viewport is measured.
+    // Both branches need a *viewport-dependent* minZoom, not just [content]'s own declared one:
+    // without it, zooming out past "the map fills the viewport" reveals empty space beyond the
+    // map's edges (there is nothing to pan into out there) — [MapContent.Tiles]'s own `config
+    // .minZoom` is a fixed property of the tile set (how far out real tile data exists), which is
+    // usually lower than whatever zoom is needed to actually cover a given device's viewport, so
+    // it alone isn't a tight enough floor. Re-applied on *every* viewport size change (not just
+    // once): a device's window/inset layout can report more than one size in quick succession
+    // right after a cold start while it settles, and a one-shot application would permanently lock
+    // in whatever (possibly still-settling, too-small) size happened to arrive first. This is safe
+    // to always re-run because [viewportSize] only changes for genuine layout reasons (resize,
+    // rotation, insets settling) — a user's own pan/pinch/zoom gestures only ever change [state]'s
+    // `center`/`zoom`, never `viewportSize` itself, so this can never fight a manual zoom/pan.
     var hasAppliedInitialFitZoom by remember(content) { mutableStateOf(false) }
     LaunchedEffect(state, content, viewportSize) {
         when (content) {
-            is MapContent.Tiles ->
-                state.setZoomRange(
-                    content.config.minZoom.toFloat(),
-                    content.config.maxZoom.toFloat()
+            is MapContent.Tiles -> {
+                // [MapConfig.maxZoom] is backend-declared metadata, not derived from [scheme]
+                // itself — if it's ever set higher than what [scheme] geometrically supports for
+                // this image's actual `widthPx`/`heightPx` (e.g. a stale value left over from
+                // before the source image was swapped for a smaller one), requesting a zoom beyond
+                // `scheme.maxZoom` asks [TileUrl.build] for tile coordinates no tile pyramid
+                // generated from this image could ever have — each one a guaranteed-failed network
+                // request, repeated for every tile in view at that zoom. Clamping here means a
+                // misconfigured backend value can never do that, regardless of whether it also gets
+                // fixed at the source.
+                val maxZoom = minOf(content.config.maxZoom.toFloat(), scheme.maxZoom.toFloat())
+                val coverFitZoom = coverFitZoom(
+                    scheme, viewportSize.width.toFloat(), viewportSize.height.toFloat(),
                 )
+                // Also clamped to [maxZoom]: on a viewport large enough (or an image small enough)
+                // that "cover" the viewport would need upscaling past the image's own sharpest
+                // available zoom, the un-clamped cover-fit zoom can exceed [maxZoom] — which would
+                // otherwise make this an invalid (`minZoom > maxZoom`) range and crash
+                // `Animatable.updateBounds`. Falling back to [maxZoom] itself here means the image
+                // is shown at its sharpest available resolution, slightly short of a perfect
+                // edge-to-edge cover in that rare case, rather than crashing.
+                val minZoom =
+                    max(content.config.minZoom.toFloat(), coverFitZoom).coerceAtMost(maxZoom)
+                state.setZoomRange(minZoom, maxZoom)
+                if (!hasAppliedInitialFitZoom && viewportSize.width > 0 && viewportSize.height > 0) {
+                    hasAppliedInitialFitZoom = true
+                    val fitScale = scheme.scaleAt(minZoom)
+                    val boundsX = centerBoundsForAxis(
+                        (scheme.widthPx * fitScale).toFloat(), viewportSize.width.toFloat(),
+                    )
+                    val boundsY = centerBoundsForAxis(
+                        (scheme.heightPx * fitScale).toFloat(), viewportSize.height.toFloat(),
+                    )
+                    state.snapTo(state.center, minZoom, boundsX, boundsY)
+                }
+            }
 
             is MapContent.SingleImage -> {
                 val minZoom = singleImageMinZoom(

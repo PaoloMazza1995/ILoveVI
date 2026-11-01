@@ -273,4 +273,36 @@ class MapGeometryTest {
             )
         }
     }
+
+    @Test
+    fun coverFitZoom_zeroWhenViewportNotMeasuredYet() {
+        assertEquals(0f, coverFitZoom(scheme, 0f, 0f))
+        assertEquals(0f, coverFitZoom(scheme, 100f, 0f))
+    }
+
+    @Test
+    fun coverFitZoom_scaledImageCoversTheWholeViewportOnBothAxes() {
+        val mapScheme = TileScheme(widthPx = 4096, heightPx = 4096)
+        val viewportWidth = 1080f
+        val viewportHeight = 2000f
+
+        val zoom = coverFitZoom(mapScheme, viewportWidth, viewportHeight)
+        val scale = mapScheme.scaleAt(zoom)
+
+        assertTrue((mapScheme.widthPx * scale) >= viewportWidth - 0.5f)
+        assertTrue((mapScheme.heightPx * scale) >= viewportHeight - 0.5f)
+    }
+
+    @Test
+    fun coverFitZoom_canExceedSchemeMaxZoom_whenTheViewportIsLargerThanTheImageAtMaxZoom() {
+        // Regression case for a real crash: a 1000x1000 image only has scheme.maxZoom = 2 (two
+        // 256px tile doublings), but a 1024x768 viewport needs more than that to actually cover
+        // itself — coverFitZoom must be allowed to report a value *above* scheme.maxZoom here
+        // (callers, not this pure function, are responsible for clamping to what's actually
+        // requestable — see MapViewer.kt's own `coerceAtMost(maxZoom)` for why).
+        val smallScheme = TileScheme(widthPx = 1000, heightPx = 1000)
+        val zoom = coverFitZoom(smallScheme, 1024f, 768f)
+
+        assertTrue(zoom > smallScheme.maxZoom.toFloat())
+    }
 }

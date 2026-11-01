@@ -83,6 +83,7 @@ kotlin {
             implementation(project(":core:network"))
             implementation(project(":core:data"))
             implementation(project(":feature:catalog"))
+            implementation(project(":feature:map"))
         }
         androidMain {
             kotlin.srcDir("src/appMain/kotlin")

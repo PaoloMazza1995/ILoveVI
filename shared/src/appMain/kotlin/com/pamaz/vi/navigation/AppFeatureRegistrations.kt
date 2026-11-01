@@ -7,9 +7,9 @@ import androidx.navigation.navArgument
 import androidx.savedstate.read
 import com.pamaz.vi.feature.catalog.catalog.CatalogScreen
 import com.pamaz.vi.feature.catalog.detail.DetailScreen
+import com.pamaz.vi.feature.map.filters.MapFiltersScreen
+import com.pamaz.vi.feature.map.map.MapScreen
 import com.pamaz.vi.screens.CompilationScreen
-import com.pamaz.vi.screens.MapFiltersScreen
-import com.pamaz.vi.screens.MapTabScreen
 import com.pamaz.vi.screens.MusicStubScreen
 import com.pamaz.vi.screens.NewsStubScreen
 import com.pamaz.vi.screens.SettingsStubScreen
@@ -26,9 +26,12 @@ internal fun appFeatureRegistrations(
     onSelectMapEntry: (String) -> Unit,
 ): List<FeatureRegistration> = listOf(
     FeatureRegistration(AppDestination.Tab.Map) {
-        MapTabScreen(
+        MapScreen(
             selectedEntryId = selectedMapEntryId,
             onOpenFilters = { navController.navigate(AppDestination.Secondary.MapFilters.route) },
+            onOpenDetail = { category, entryId ->
+                navController.navigate(AppDestination.Secondary.Detail.route(category, entryId))
+            },
         )
     },
     FeatureRegistration(AppDestination.Tab.Catalog) {

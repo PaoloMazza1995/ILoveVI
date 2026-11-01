@@ -525,6 +525,64 @@ fun IconWarningTriangle(
     }
 }
 
+/**
+ * Magnifying glass — the Map header's search action (MAP-01, Could-priority search). No exact
+ * preview.html reference exists for the Map screen itself (the design canvas's "Map"/"Map
+ * filters" screens have no exported SVG in this repo, unlike every other icon above); drawn here
+ * in the same 24x24, stroke-only style as the rest of this file: a circle plus a short diagonal
+ * handle, the universal search glyph.
+ */
+@Composable
+fun IconSearch(
+    modifier: Modifier = Modifier,
+    tint: Color = IloveViColors.ink,
+    size: Dp = 24.dp,
+    strokeWidth: Dp = 2.dp,
+) {
+    Canvas(modifier.size(size)) {
+        val s = size.toPx() / NATIVE_BOX
+        val stroke = iconStroke(strokeWidth.toPx())
+        drawCircle(
+            color = tint,
+            radius = 6.5f * s,
+            center = Offset(10f * s, 10f * s),
+            style = stroke,
+        )
+        val handle = Path().apply {
+            moveTo(15f * s, 15f * s)
+            lineTo(21f * s, 21f * s)
+        }
+        drawPath(handle, color = tint, style = stroke)
+    }
+}
+
+/**
+ * Filter funnel — the Map header's "Filters" action (MAP-02/MAP-05). Same unconfirmed-asset
+ * caveat as [IconSearch]: no design-canvas export exists for this glyph, so it's drawn here in
+ * this file's usual stroke style as the standard funnel shape.
+ */
+@Composable
+fun IconFilter(
+    modifier: Modifier = Modifier,
+    tint: Color = IloveViColors.ink,
+    size: Dp = 24.dp,
+    strokeWidth: Dp = 2.dp,
+) {
+    Canvas(modifier.size(size)) {
+        val s = size.toPx() / NATIVE_BOX
+        val path = Path().apply {
+            moveTo(4f * s, 5f * s)
+            lineTo(20f * s, 5f * s)
+            lineTo(13.5f * s, 13f * s)
+            lineTo(13.5f * s, 19f * s)
+            lineTo(10.5f * s, 20.5f * s)
+            lineTo(10.5f * s, 13f * s)
+            close()
+        }
+        drawPath(path, color = tint, style = iconStroke(strokeWidth.toPx()))
+    }
+}
+
 // --- Category/sub-type icon set (step I) -----------------------------------------------------
 //
 // Unlike the icons above (plain Canvas-drawing composables, each hardcoded to one specific use),

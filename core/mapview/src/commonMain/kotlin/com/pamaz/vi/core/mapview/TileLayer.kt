@@ -8,13 +8,32 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.pamaz.vi.core.model.map.TileScheme
 import com.pamaz.vi.core.model.map.TileUrl
 import com.pamaz.vi.core.model.map.visibleTiles
 import com.pamaz.vi.design.IloveViColors
+import kotlin.math.roundToInt
+
+/**
+ * A tile is drawn very slightly larger than its own [TileRange.tileScreenSizePx]-derived size and
+ * centered on its unmodified position, so neighboring tiles overlap by half this amount on every
+ * shared edge instead of leaving a sub-pixel gap between them. [TileRange.tiles] positions each
+ * tile at `tileIndex * tileScreenSizePx` offset from the viewport origin; when that scale isn't an
+ * exact integer number of pixels (the common case at almost any zoom level, since it's a
+ * continuous float, not snapped to whole pixels), each tile's *own* rounded position is internally
+ * consistent but the *rounded delta* between two adjacent tiles can be off by a pixel from the
+ * true (fractional) tile size — visible as a thin seam/grid line at every tile boundary. This is
+ * the same fixed-overlap technique standard slippy-map libraries use for the same reason; a tiny,
+ * fixed overlap is cheaper and more robust than trying to compute a per-tile size that makes every
+ * adjacent pair's rounded boundary line up exactly.
+ */
+private val TileOverlap: Dp = 1.dp
 
 /**
  * Draws every tile [TileScheme.visibleTiles] reports for the current viewport/center/zoom.
@@ -54,14 +73,21 @@ internal fun TileLayer(
     val tileSizeDp = remember(density, tileRange.tileScreenSizePx) {
         with(density) { tileRange.tileScreenSizePx.toDp() }
     }
+    val tileDrawSizeDp = tileSizeDp + TileOverlap
+    val halfOverlapPx = with(density) { (TileOverlap / 2).toPx() }
 
     Box(modifier = modifier) {
         for (tile in tileRange.tiles) {
             key(tile.tileX, tile.tileY, tileRange.zoom) {
                 Box(
                     modifier = Modifier
-                        .offset { IntOffset(tile.screenX.toInt(), tile.screenY.toInt()) }
-                        .size(tileSizeDp)
+                        .offset {
+                            IntOffset(
+                                (tile.screenX - halfOverlapPx).roundToInt(),
+                                (tile.screenY - halfOverlapPx).roundToInt(),
+                            )
+                        }
+                        .size(tileDrawSizeDp)
                         .background(IloveViColors.bg800),
                 ) {
                     AsyncImage(
@@ -72,7 +98,8 @@ internal fun TileLayer(
                             tile.tileY
                         ),
                         contentDescription = null,
-                        modifier = Modifier.size(tileSizeDp),
+                        modifier = Modifier.size(tileDrawSizeDp),
+                        contentScale = ContentScale.Crop,
                     )
                 }
             }

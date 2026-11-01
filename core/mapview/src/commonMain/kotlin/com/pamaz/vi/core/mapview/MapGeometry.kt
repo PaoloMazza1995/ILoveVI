@@ -4,6 +4,8 @@ import com.pamaz.vi.core.model.NormalizedPoint
 import com.pamaz.vi.core.model.map.MapViewport
 import com.pamaz.vi.core.model.map.ScreenPoint
 import com.pamaz.vi.core.model.map.TileScheme
+import kotlin.math.log2
+import kotlin.math.max
 
 /**
  * The minimum side length of a pin's tappable area, regardless of how big it's drawn — the
@@ -92,6 +94,27 @@ internal fun centerBoundsForAxis(
     if (scaledDimPx <= viewportDimPx) return 0.5f..0.5f
     val half = viewportDimPx / (2f * scaledDimPx)
     return half..(1f - half)
+}
+
+/**
+ * The zoom at which [scheme]'s full image "cover" fits a [viewportWidthPx] by [viewportHeightPx]
+ * viewport — the smallest zoom at which the image is at least as large as the viewport on both
+ * axes, so there's never empty space beyond its edges to pan into. Returns `0f` if the viewport
+ * hasn't been measured yet (either dimension `<= 0`).
+ *
+ * The general form of [singleImageMinZoom]'s own formula ([singleImageTileScheme]'s `scheme
+ * .maxZoom` is always `0`, making the `+ scheme.maxZoom` term here a no-op in that one case) —
+ * [MapViewer]'s [MapContent.Tiles] branch uses this one directly, since a real tile pyramid's
+ * `scheme.maxZoom` is whatever [TileScheme] computes it to be, not necessarily `0`.
+ */
+internal fun coverFitZoom(
+    scheme: TileScheme,
+    viewportWidthPx: Float,
+    viewportHeightPx: Float,
+): Float {
+    if (viewportWidthPx <= 0f || viewportHeightPx <= 0f) return 0f
+    val fitScale = max(viewportWidthPx / scheme.widthPx, viewportHeightPx / scheme.heightPx)
+    return log2(fitScale.toDouble()).toFloat() + scheme.maxZoom
 }
 
 /**

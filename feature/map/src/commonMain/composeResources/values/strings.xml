@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="map_wordmark">ILoveVI</string>
+    <string name="map_search_content_description">Search</string>
+    <string name="map_search_placeholder">Search by name or area</string>
+    <string name="map_filters_content_description">Filters</string>
+
+    <string name="map_category_weapons">Weapons</string>
+    <string name="map_category_vehicles">Vehicles</string>
+    <string name="map_category_items">Items</string>
+
+    <!-- "%1$s" is the category (e.g. "Weapons"), "%2$s" the zone (e.g. "Vinewood") — the summary card's "category - zone" row. -->
+    <string name="map_pin_category_zone">%1$s - %2$s</string>
+    <string name="map_view_details">View details</string>
+
+    <string name="map_empty_title">No pins to show</string>
+    <string name="map_empty_hint">Try enabling more filters.</string>
+
+    <string name="map_config_missing_title">Map not available yet</string>
+    <string name="map_config_missing_hint">The map will appear here once it has downloaded.</string>
+
+    <string name="map_error_title">Something went wrong</string>
+
+    <string name="map_back_content_description">Back</string>
+    <string name="map_filters_title">Filters</string>
+    <string name="map_filters_reset">Reset</string>
+    <string name="map_filters_show_on_map">Show on map</string>
+    <string name="map_filters_empty_warning">Every sub-type is off — the map will show nothing.</string>
+</resources>
