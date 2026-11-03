@@ -246,9 +246,23 @@ fun MapViewer(
                 // or a tile address pointing somewhere else) — "the app already downloads the
                 // lowest levels at first launch for offline use" (task item 2's last bullet),
                 // reused here rather than `feature:map`'s now-removed `PrefetchLowestZoomTiles`.
-                LaunchedEffect(engine, scheme, nativeMinZoom, nativeMaxZoom) {
+                // Re-keyed on `viewportSize` too (not just the map's own geometry): the camera's
+                // own "zoomed out as far as possible" level depends on the viewport, and must
+                // always be pinned too — see `preloadPinnedLevels`' own KDoc for the bug this
+                // fixes (tiles at that level getting evicted, then showing blank/stale on
+                // zooming back out, even though they'd already loaded once in the same session).
+                LaunchedEffect(engine, scheme, nativeMinZoom, nativeMaxZoom, viewportSize) {
+                    val cameraMinZoomCeiling =
+                        if (viewportSize.width > 0 && viewportSize.height > 0) {
+                            val coverFit = coverFitZoom(
+                                scheme, viewportSize.width.toFloat(), viewportSize.height.toFloat(),
+                            )
+                            kotlin.math.ceil(max(nativeMinZoom.toFloat(), coverFit)).toInt()
+                        } else {
+                            nativeMinZoom
+                        }
                     engine.preloadPinnedLevels(
-                        scheme, nativeMinZoom, nativeMaxZoom,
+                        scheme, nativeMinZoom, nativeMaxZoom, cameraMinZoomCeiling,
                         kotlin.time.Clock.System.now().toEpochMilliseconds(),
                     )
                 }

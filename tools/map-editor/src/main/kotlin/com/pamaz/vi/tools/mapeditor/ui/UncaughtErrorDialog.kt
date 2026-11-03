@@ -8,12 +8,15 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+import java.awt.datatransfer.StringSelection
 
 /**
  * Shown for any uncaught exception a background coroutine reports to
@@ -23,9 +26,11 @@ import androidx.compose.ui.unit.dp
  * `SupervisorJob` on the shared scope already means one failed background task doesn't take any
  * other part of the editor down with it.
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun UncaughtErrorDialog(throwable: Throwable, onDismiss: () -> Unit) {
     val clipboard: Clipboard = LocalClipboard.current
+    val coroutineScope = rememberCoroutineScope()
     val details = throwable.stackTraceToString()
 
     AlertDialog(
@@ -40,7 +45,13 @@ fun UncaughtErrorDialog(throwable: Throwable, onDismiss: () -> Unit) {
         },
         confirmButton = { Button(onClick = onDismiss) { Text("Close") } },
         dismissButton = {
-            TextButton(onClick = { clipboard.setText(AnnotatedString(details)) }) { Text("Copy details") }
+            TextButton(onClick = {
+                // `Clipboard.setClipEntry` is a suspend fun; `ClipEntry.toClipEntry()` for an
+                // `AnnotatedString` is `internal` to Compose Foundation's own module, not callable
+                // from here — this is plain text anyway (a stack trace has no rich styling), so a
+                // plain AWT `StringSelection` as the native clip entry is the simplest correct fix.
+                coroutineScope.launch { clipboard.setClipEntry(ClipEntry(StringSelection(details))) }
+            }) { Text("Copy details") }
         },
     )
 }

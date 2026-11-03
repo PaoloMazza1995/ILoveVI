@@ -41,12 +41,31 @@ import kotlin.time.Clock
  * the draw phase; the actual fetch coroutines run on [engine]'s own remembered
  * [kotlinx.coroutines.CoroutineScope], not this draw call's stack.
  *
+ * **Which tile level to draw vs. which to fetch are two different decisions, on purpose** — an
+ * earlier version of this file conflated them (using one hysteresis-smoothed "render level" for
+ * both), which caused a real, reported bug: [TileScheme.visibleTiles] already has its own correct,
+ * tested continuous-zoom handling built in (`fractionalFactor`, scaling *and* positioning every
+ * tile self-consistently so the selected range always exactly covers the viewport at any
+ * fractional zoom) — reusing a *different*, hysteresis-lagged level for an external canvas-level
+ * `scale()` on top of that fought against it, leaving gaps at the viewport edges whenever the two
+ * diverged (which hysteresis guarantees will happen). The fix: let [TileScheme.visibleTiles] pick
+ * the tile level to *draw* on its own, every frame, from the true continuous zoom (clamped to
+ * `nativeMinZoom..nativeMaxZoom`) — [TileRange.zoom] is whatever it resolves to. A missing tile at
+ * that level falls back to the nearest cached ancestor exactly as usual, so this level changing
+ * from frame to frame near a boundary is cosmetically harmless (the fallback image is the same
+ * ancestor either way). [ZoomRequestDebounceState] still debounces *fetch requests* specifically
+ * off that same resolved level, so a fast pinch sweeping across several integer levels doesn't
+ * start (and immediately abandon) a network fetch for every single one of them — drawing can
+ * change level every frame for free; spending a real request on it is the expensive part this
+ * still protects.
+ *
  * [nativeMaxZoom] is the sharpest zoom level real tiles exist for; [state.zoom][MapViewerState.zoom]
  * may run higher than that (overzoom, see [com.pamaz.vi.core.mapview.tile.TileCacheConfig
- * .OVERZOOM_LEVELS]/the module README's "Overzoom" section) — tiles are always requested/rendered
- * at `min(state.zoom, nativeMaxZoom)`, then the
- * whole canvas is scaled up by the leftover `2^(state.zoom - nativeMaxZoom)` factor around the
- * viewport center, with [FilterQuality.Medium] smoothing. [MapViewer] is the only caller.
+ * .OVERZOOM_LEVELS]/the module README's "Overzoom" section) — [overzoomScaleFactor] is exactly
+ * `1.0` whenever [state.zoom][MapViewerState.zoom] is within `nativeMinZoom..nativeMaxZoom` (i.e.
+ * for the entire native range, left to [TileScheme.visibleTiles] itself as described above), and
+ * only scales the whole canvas up past that point, with [FilterQuality.Medium] smoothing.
+ * [MapViewer] is the only caller.
  */
 @Composable
 internal fun TileLayer(
@@ -74,29 +93,45 @@ internal fun TileLayer(
 
         val now = Clock.System.now().toEpochMilliseconds()
         val continuousZoom = state.zoom
+        val nativeClampedZoom =
+            continuousZoom.coerceIn(nativeMinZoom.toFloat(), nativeMaxZoom.toFloat())
+        val overzoomFactor = overzoomScaleFactor(continuousZoom, nativeMinZoom, nativeMaxZoom)
 
-        val renderLevel = engine.zoomSelector.select(continuousZoom, nativeMinZoom, nativeMaxZoom)
-        val requestLevel = zoomRequestState.decide(
-            renderLevel = renderLevel,
-            isAnimating = state.isZoomAnimating,
-            nowMillis = now,
-        )
-
-        val scaleFactor = tileRenderScaleFactor(continuousZoom, renderLevel)
-
-        scale(scaleFactor, pivot = Offset(size.width / 2f, size.height / 2f)) {
+        // Pivot at the ORIGIN, not the viewport center — a real, reported bug ("tiles drift away
+        // from the map at heavy zoom"). `visibleTiles` below is fed the *shrunken*
+        // `size / overzoomFactor` viewport, so it places `state.center` at half of THAT (smaller)
+        // value, not at half of the real `size`. Scaling around the viewport's visual center would
+        // move that already-off-center point even further off-center, proportionally to
+        // `overzoomFactor` — invisible at `overzoomFactor == 1` (native range), increasingly wrong
+        // the deeper into overzoom you go (exactly "quando faccio troppo zoom"). Scaling around
+        // (0, 0) instead is the correct complement to feeding `visibleTiles` a shrunken viewport:
+        // local position `size/(2*overzoomFactor)` (where `visibleTiles` places `state.center`)
+        // maps to `0 + size/(2*overzoomFactor) * overzoomFactor == size/2` — the true screen
+        // center — for *any* `overzoomFactor`, not just `1`.
+        scale(overzoomFactor, pivot = Offset.Zero) {
+            // Pre-scale coordinate space (see this function's own KDoc): `overzoomFactor` is
+            // exactly 1.0 outside genuine overzoom, making this division a no-op for the entire
+            // native zoom range — `visibleTiles` handles that range's own continuous scaling
+            // internally via `nativeClampedZoom`, consistently, with no risk of the two
+            // calculations diverging the way an external hysteresis-based one used to.
             val tileRange = scheme.visibleTiles(
                 center = state.center,
-                zoom = renderLevel.toFloat(),
-                viewportWidthPx = size.width,
-                viewportHeightPx = size.height,
+                zoom = nativeClampedZoom,
+                viewportWidthPx = size.width / overzoomFactor,
+                viewportHeightPx = size.height / overzoomFactor,
+            )
+            val drawLevel = tileRange.zoom
+            val requestLevel = zoomRequestState.decide(
+                renderLevel = drawLevel,
+                isAnimating = state.isZoomAnimating,
+                nowMillis = now,
             )
 
-            val tilesWide = scheme.tilesWide(renderLevel)
-            val tilesHigh = scheme.tilesHigh(renderLevel)
+            val tilesWide = scheme.tilesWide(drawLevel)
+            val tilesHigh = scheme.tilesHigh(drawLevel)
 
             for (tile in tileRange.tiles) {
-                val key = TileKey(mapVersion, renderLevel, tile.tileX, tile.tileY)
+                val key = TileKey(mapVersion, drawLevel, tile.tileX, tile.tileY)
                 val dstOffset = IntOffset(tile.screenX.roundToInt(), tile.screenY.roundToInt())
                 // +1px: each tile is drawn very slightly larger than its nominal size, so a
                 // sub-pixel rounding difference between two adjacent tiles' independently-rounded
@@ -109,15 +144,15 @@ internal fun TileLayer(
 
                 // Only the debounced *request* level actually starts network/disk work (see
                 // ZoomRequestDebounceState's KDoc) — fallback drawing below still runs every
-                // frame at `renderLevel` regardless, using whatever is already resident.
-                if (renderLevel == requestLevel) {
+                // frame at `drawLevel` regardless, using whatever is already resident.
+                if (drawLevel == requestLevel) {
                     engine.coordinator.request(
-                        renderLevel, tile.tileX, tile.tileY, TileRequestPriority.VIEWPORT, now,
+                        drawLevel, tile.tileX, tile.tileY, TileRequestPriority.VIEWPORT, now,
                     )
                     requestRing(
                         engine,
                         mapVersion,
-                        renderLevel,
+                        drawLevel,
                         tile.tileX,
                         tile.tileY,
                         tilesWide,
@@ -152,7 +187,7 @@ internal fun TileLayer(
 
                 if (alpha < 1f) {
                     drawAncestorFallback(
-                        engine, mapVersion, renderLevel, tile.tileX, tile.tileY,
+                        engine, mapVersion, drawLevel, tile.tileX, tile.tileY,
                         nativeMinZoom, scheme.tileSize, dstOffset, dstSize,
                     )
                 }
@@ -170,8 +205,8 @@ internal fun TileLayer(
             }
 
             // Next zoom level's center tile, once the gesture has settled on a level.
-            if (requestLevel == renderLevel && renderLevel < nativeMaxZoom) {
-                requestNextZoomCenter(engine, renderLevel, nativeMaxZoom, scheme, now)
+            if (requestLevel == drawLevel && drawLevel < nativeMaxZoom) {
+                requestNextZoomCenter(engine, drawLevel, nativeMaxZoom, scheme, now)
             }
         }
     }
@@ -181,26 +216,25 @@ private val TileCrossfadeDurationMs =
     com.pamaz.vi.core.mapview.tile.TileCacheConfig.CROSSFADE_DURATION_MS
 
 /**
- * The continuous scale to draw a discrete [renderLevel]'s tiles at so they visually track
- * [continuousZoom] smoothly — not just for overzoom (`continuousZoom > nativeMaxZoom`), but for
- * *any* gap between the continuous camera zoom and the discrete, hysteresis-selected tile level.
+ * `1.0` whenever [continuousZoom] is within `nativeMinZoom..nativeMaxZoom` — [TileScheme
+ * .visibleTiles] already handles that whole range's continuous scaling internally (its own
+ * `fractionalFactor`), so there is nothing left for an external canvas transform to do there.
+ * Only once [continuousZoom] runs past [nativeMaxZoom] (overzoom — [state.zoom][MapViewerState
+ * .zoom] can go [com.pamaz.vi.core.mapview.tile.TileCacheConfig.OVERZOOM_LEVELS] levels past the
+ * native maximum) does this return something other than `1.0`: the leftover enlargement
+ * [TileLayer] applies with its own `scale()`, on top of tiles [TileScheme.visibleTiles] already
+ * rendered at exactly [nativeMaxZoom]'s own native resolution.
  *
- * A real, reported bug lived here: the previous formula was `2^(continuousZoom -
- * min(continuousZoom, nativeMaxZoom))`, which is exactly `1.0` for the entire native zoom range —
- * tiles stayed frozen at [renderLevel]'s fixed pixel size through most of a pinch gesture (the
- * render level only updates once hysteresis lets it flip), so the map visibly didn't scale at all
- * until that sudden jump. That's why zooming showed a static, unscaled tile grid (visible tile
- * boundaries) instead of smoothly enlarging like every other slippy map. This one formula covers
- * both "mid-pinch within native zoom" and "past the native max" (overzoom) continuously, since
- * [renderLevel] is already clamped to `nativeMinZoom..nativeMaxZoom` by [TileZoomSelector] before
- * this is ever called.
- *
- * Pure/extracted specifically so this can be unit-tested — the formula used to live inline inside
- * [TileLayer]'s `DrawScope` lambda, which no unit test (lacking a real Compose UI harness) could
- * ever exercise; see `TileRenderScaleFactorTest`.
+ * Pure/extracted specifically so this is unit-testable — see `OverzoomScaleFactorTest`.
  */
-internal fun tileRenderScaleFactor(continuousZoom: Float, renderLevel: Int): Float =
-    2.0.pow((continuousZoom - renderLevel).toDouble()).toFloat()
+internal fun overzoomScaleFactor(
+    continuousZoom: Float,
+    nativeMinZoom: Int,
+    nativeMaxZoom: Int
+): Float {
+    val clamped = continuousZoom.coerceIn(nativeMinZoom.toFloat(), nativeMaxZoom.toFloat())
+    return 2.0.pow((continuousZoom - clamped).toDouble()).toFloat()
+}
 
 /** Draws the best available ancestor under a tile that's missing or still crossfading in — see [findAncestorFallback]'s own KDoc. A no-op (the [IloveViColors.bg800] Canvas background shows through) if no ancestor exists, which "can't happen" once the pinned low levels have loaded. */
 private fun DrawScope.drawAncestorFallback(
@@ -232,11 +266,11 @@ private fun DrawScope.drawAncestorFallback(
 
 /**
  * Implements "tile requests for a new level start once the zoom has been stable for about 80ms,
- * or immediately for animated zooms" — [TileZoomSelector][com.pamaz.vi.core.mapview.tile.TileZoomSelector]'s
- * hysteresis already decides *which* level to render every frame (so fallback drawing is always
- * current); this class separately decides when that level's tiles are actually worth spending a
- * network/disk request on, so a fast pinch sweeping past several levels doesn't start (and then
- * immediately abandon) a fetch for every one of them.
+ * or immediately for animated zooms" — [TileLayer] always knows which level to *draw* this frame
+ * (whatever [com.pamaz.vi.core.model.map.TileScheme.visibleTiles] resolves to; see [TileLayer]'s
+ * own KDoc), so this class is purely about *fetch* debouncing: a fast pinch sweeping past several
+ * integer levels shouldn't start (and then immediately abandon) a network/disk request for every
+ * one of them.
  */
 private class ZoomRequestDebounceState {
     private var lastRequestedLevel: Int? = null

@@ -1,17 +1,12 @@
 package com.pamaz.vi.core.mapview
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -24,9 +19,6 @@ import com.pamaz.vi.core.model.EntryCategory
 import com.pamaz.vi.core.model.map.MapViewport
 import com.pamaz.vi.core.model.map.ScreenPoint
 import com.pamaz.vi.core.model.map.TileScheme
-import com.pamaz.vi.design.IloveViColors
-import com.pamaz.vi.design.IloveViShapes
-import com.pamaz.vi.design.IloveViSpacing
 import com.pamaz.vi.design.components.IloveViClusterBadge
 import com.pamaz.vi.design.components.IloveViMapPin
 import com.pamaz.vi.design.components.IloveViMapPinCategory
@@ -194,30 +186,17 @@ private fun PinMarker(
 }
 
 /**
- * The viewer's default pin look: [IloveViMapPin] (category color/icon, ring when [selected]) with
- * an optional small label pill underneath. A caller may still override this (via [PinLayer]'s
- * `pinContent` / [MapViewer]'s `pinContent`) to customize a single pin's look, but clusters are no
- * longer drawn through this hook — see [MapViewerItem]'s KDoc: a [MapViewerCluster] is its own
- * item kind, always drawn with `:core:designsystem`'s `IloveViClusterBadge`.
+ * The viewer's default pin look: just [IloveViMapPin] (category color/icon, ring when [selected])
+ * — no visible label underneath. A name pill used to be drawn here, but a long entry name wraps
+ * onto a second line at the pin's fixed width and looks broken, especially with several pins close
+ * together; [pin.label] is still used for the pin's accessibility content description
+ * ([PinMarker]'s own `accessibleLabel`), just not drawn visually. A caller may still override this
+ * (via [PinLayer]'s `pinContent` / [MapViewer]'s `pinContent`) to customize a single pin's look,
+ * but clusters are no longer drawn through this hook — see [MapViewerItem]'s KDoc: a
+ * [MapViewerCluster] is its own item kind, always drawn with `:core:designsystem`'s
+ * `IloveViClusterBadge`.
  */
 @Composable
 internal fun DefaultMapViewerPinContent(pin: MapViewerPin, selected: Boolean) {
-    Box(contentAlignment = Alignment.Center) {
-        IloveViMapPin(category = pin.category.toPinCategory(), selected = selected)
-        pin.label?.let { label ->
-            Box(
-                modifier = Modifier
-                    .offset(y = 28.dp)
-                    .clip(IloveViShapes.radiusPill)
-                    .background(IloveViColors.bg800, IloveViShapes.radiusPill)
-                    .padding(horizontal = IloveViSpacing.space2, vertical = 2.dp),
-            ) {
-                Text(
-                    text = label,
-                    color = IloveViColors.ink,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-        }
-    }
+    IloveViMapPin(category = pin.category.toPinCategory(), selected = selected)
 }

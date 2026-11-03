@@ -27,21 +27,34 @@ internal class TileEngine(
     private val httpClient: HttpClient,
 ) {
     /**
-     * Pins zoom levels `nativeMinZoom..min(nativeMaxZoom, PINNED_MAX_ZOOM)` (capped at
-     * [TileCacheConfig.PINNED_MAX_TILE_COUNT] tiles total) against eviction and immediately
-     * requests whichever of them aren't already decoded — "the app already downloads the lowest
-     * levels at first launch for offline use" (task item 2's last bullet), reused here as the
-     * pinned-levels warmup rather than a second implementation.
+     * Pins zoom levels `nativeMinZoom..min(nativeMaxZoom, max(PINNED_MAX_ZOOM, [cameraMinZoomCeiling]))`
+     * (capped at [TileCacheConfig.PINNED_MAX_TILE_COUNT] tiles total) against eviction and
+     * immediately requests whichever of them aren't already decoded — "the app already downloads
+     * the lowest levels at first launch for offline use" (task item 2's last bullet), reused here
+     * as the pinned-levels warmup rather than a second implementation.
+     *
+     * [cameraMinZoomCeiling] is a real, reported-bug fix: [TileCacheConfig.PINNED_MAX_ZOOM] (`3`)
+     * is only a *floor* on what gets pinned, not the whole story — on a large enough viewport (a
+     * desktop editor window, a tablet), [MapViewer]'s own cover-fit "zoomed out as far as
+     * possible" level can land *above* `3` (the map has to stay at least as big as the viewport,
+     * and a bigger viewport needs a sharper zoom to do that). Tiles at that level were never
+     * pinned, so panning around at other zooms could evict them under normal LRU pressure — and
+     * zooming back out to "maximum" showed blank/stale squares even though that exact area had
+     * already loaded once before in the same session. Passing the camera's own actual minZoom
+     * ceiling here guarantees whatever the user can reach by zooming out as far as possible is
+     * always resident, regardless of how that compares to the fixed constant.
      */
     fun preloadPinnedLevels(
         scheme: TileScheme,
         nativeMinZoom: Int,
         nativeMaxZoom: Int,
+        cameraMinZoomCeiling: Int,
         nowMillis: Long,
     ) {
-        val pinnedZoomCeiling = minOf(nativeMaxZoom, TileCacheConfig.PINNED_MAX_ZOOM)
+        val pinnedZoomCeiling =
+            minOf(nativeMaxZoom, maxOf(TileCacheConfig.PINNED_MAX_ZOOM, cameraMinZoomCeiling))
         val keys = buildSet {
-            for (zoom in nativeMinZoom..pinnedZoomCeiling) {
+            for (zoom in pinnedZoomPriorityOrder(nativeMinZoom, pinnedZoomCeiling)) {
                 for (tileY in 0 until scheme.tilesHigh(zoom)) {
                     for (tileX in 0 until scheme.tilesWide(zoom)) {
                         if (size >= TileCacheConfig.PINNED_MAX_TILE_COUNT) return@buildSet
@@ -66,6 +79,25 @@ internal class TileEngine(
         httpClient.close()
     }
 }
+
+/**
+ * Priority order (not ascending zoom order) [TileEngine.preloadPinnedLevels] fills its
+ * [TileCacheConfig.PINNED_MAX_TILE_COUNT]-capped pinned set from: [nativeMinZoom] first (tiny —
+ * usually a single tile — and the universal fallback ancestor for *every* missing tile anywhere,
+ * via [findAncestorFallback]; must never be the thing the cap drops), then [pinnedZoomCeiling]
+ * (the camera's own "zoomed out as far as possible" resting level — the actual tiles the user is
+ * looking at when idle, and the whole point of [TileEngine.preloadPinnedLevels]'s
+ * `cameraMinZoomCeiling` parameter), then every level strictly in between as a best-effort
+ * "progressively sharper overview." If the cap is ever hit, only this last, least-critical group
+ * gets truncated — never the two levels that actually matter. Extracted as a pure function
+ * (rather than inlined in the loop) specifically so this ordering is unit-testable on its own.
+ */
+internal fun pinnedZoomPriorityOrder(nativeMinZoom: Int, pinnedZoomCeiling: Int): List<Int> =
+    buildList {
+        add(nativeMinZoom)
+        if (pinnedZoomCeiling != nativeMinZoom) add(pinnedZoomCeiling)
+        addAll((nativeMinZoom + 1) until pinnedZoomCeiling)
+    }
 
 /**
  * Builds and remembers one [TileEngine], scoped to [mapVersion]/[tileUrlTemplate] — a new map
