@@ -32,9 +32,13 @@ data class FeedSource(
 value class NewsItemId(val value: String)
 
 /**
- * One story fetched from a [FeedSource]. [id] is expected to be the feed's own guid, or a hash
- * of [link] when the feed has none — both derivations are the data layer's concern, not this
- * module's.
+ * One story fetched from a [FeedSource]. [id] is a stable id derived from `(feedId, link)` — the
+ * data layer's concern, not this module's (see `:core:data`'s `mergeAndDedupe`).
+ *
+ * A device-local cache, per the functional analysis' data model (section 8): there is no backend
+ * `news_items` table. `ContentSyncer.syncNews()` (`:core:data`) fetches and parses each enabled
+ * [FeedSource]'s RSS/Atom URL directly, on-device, and this is what gets cached locally — never
+ * synced from, or persisted to, a remote table the way every other content type in this model is.
  */
 @Serializable
 data class NewsItem(
@@ -49,6 +53,8 @@ data class NewsItem(
     val excerpt: String? = null,
     val imageUrl: String? = null,
     val topic: NewsTopic,
-    /** When this app's cache last fetched the item — bookkeeping for delta sync, distinct from [publishedAt]. */
+    /** When this device fetched this item from its RSS/Atom source — distinct from [updatedAt] (last local-row change) and [publishedAt] (the source's own publish date). */
     val fetchedAt: Instant,
+    /** Last time this local row changed (upsert or tombstone) — device-local bookkeeping only, not a sync cursor (there's nothing remote to compare it against). */
+    val updatedAt: Instant,
 )

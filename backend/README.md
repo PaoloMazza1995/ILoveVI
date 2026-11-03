@@ -1,8 +1,13 @@
 # IloveVI backend (Supabase)
 
-Read-only content backend for the IloveVI app: weapons, vehicles, items, map data, radio
-stations/songs and the news-feed source list. See Functional Analysis v0.3 sections 8, 9.2 and 9.4
+Content backend for the IloveVI app: weapons, vehicles, items, map data, and radio stations/songs.
+Entirely read-only from the app's perspective. See Functional Analysis v0.3 sections 8, 9.2 and 9.4
 for the product-level requirements this schema implements.
+
+The news feed is **not** part of this backend: per Functional Analysis section 8/9.3, `NewsItem` is
+a device-local cache — the app fetches and parses every enabled `feed_sources` row's RSS/Atom URL
+directly, on-device (`:core:data`'s `ContentSyncerImpl.syncNews()`). This schema only owns the feed
+*list* (`feed_sources` below), never the fetched stories themselves.
 
 Everything lives under `backend/supabase/`, using the standard Supabase CLI project layout:
 
@@ -11,7 +16,7 @@ backend/supabase/
   config.toml          # local stack configuration (ports, auth, storage, …)
   seed.sql              # small, obviously-fake dataset for tests/previews
   migrations/            # versioned schema, applied in filename order
-  tests/database/        # pgTAP test suite
+  tests/database/         # pgTAP test suite
 ```
 
 ## Prerequisites
@@ -50,21 +55,18 @@ data layer does not need an enum translation table.
 | `songs`                        | `Song`                      | `station_id` FK to `stations`.                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `map_config`                   | `MapConfig`                 | `map_version` is the primary key (not a surrogate `id`), matching `MapConfig.mapVersion`.                                                                                                                                                                                                                                                                                                                                      |
 | `map_pins`                     | `MapPin` / `EntryRef`       | `(category, entry_id)` stands in for `EntryRef`; a trigger (`validate_map_pin_entry`) checks `entry_id` exists in whichever of `weapons`/`vehicles`/`items` matches `category`, since a plain foreign key can't target one of three tables conditionally. An entry can have any number of pins (`id` is the real primary/upsert key, not `(category, entry_id)` — see `20261021120001_map_pins_allow_multiple_per_entry.sql`). |
-| `feed_sources`                 | `FeedSource`                | The feed list only — `NewsItem` is a **device-local cache** per the functional analysis data model (section 8) and intentionally has no backend table.                                                                                                                                                                                                                                                                         |
+| `feed_sources`                 | `FeedSource`                | The feed list (news stories themselves are never stored here — see this file's own intro), admin-writable like every table above.                                                                                                                                                                                                                                                                                              |
 
-Every table above has:
-
-- `updated_at timestamptz not null default now()`, bumped by a `BEFORE UPDATE` trigger
-  (`set_updated_at()`) — `INSERT` keeps whatever value is supplied, or the column default.
-- `deleted_at timestamptz null` for soft deletes.
-- A `(updated_at, id)` index (or `(updated_at, map_version)` for `map_config`) supporting the
-  delta-sync query below.
+Every table above has `updated_at timestamptz not null default now()` (bumped by a `BEFORE UPDATE`
+trigger, `set_updated_at()`), a `(updated_at, id)` index (or `(updated_at, map_version)` for
+`map_config`) supporting the delta-sync query below, and `deleted_at timestamptz null` for soft
+deletes.
 
 ## Row Level Security
 
-RLS is enabled on every table. `anon` and `authenticated` can always `SELECT` (including
-soft-deleted rows — the app needs to see a deletion to apply it locally). Only an admin can
-`INSERT`/`UPDATE`/`DELETE`.
+RLS is enabled on every table. `anon` and `authenticated` can always `SELECT` every table
+(soft-deleted rows included — the app needs to see a deletion to apply it locally). Only an admin
+can `INSERT`/`UPDATE`/`DELETE` any table.
 
 Admin is defined by a custom JWT claim: `app_metadata.role = "admin"`, checked by the
 `public.is_admin()` SQL helper
@@ -128,8 +130,11 @@ together — not a new client-side multi-step "hope nothing fails in between" se
 ## Seed data
 
 `seed.sql` inserts a small set of obviously-fake rows (`[Weapon 1]`, `[Station 1]`, …) for tests and
-UI previews. Real content can only be collected after the game's release (19 November 2026 at the
-time of writing) — see Functional Analysis v0.3 section 12.
+UI previews, plus two `example.com` placeholder feeds and **one real one**
+(`google-news-gta6`, a Google News RSS search) — see that row's own comment in `seed.sql` for the
+trade-off this one real feed accepts. Real catalog content (the `[Weapon 1]`-style placeholders)
+can only be collected after the game's release (19 November 2026 at the time of writing) — see
+Functional Analysis v0.3 section 12.
 
 ## Tests
 
@@ -146,6 +151,10 @@ files or into a real run. Covered:
 - `commit_map_edits`: admin can commit a new entry and its pin together, retrying the same payload
   creates no duplicates, anonymous is refused, and a bad coordinate fails (and saves nothing from)
   the whole call (`004_commit_map_edits.test.sql`).
+
+On-device RSS/Atom fetching and parsing (`ContentSyncerImpl.syncNews()`) has its own test suite in
+`:core:data` (`FeedParserTest`, `FeedMergeTest`) and `:core:network` (`NewsFeedFetcherTest`) — see
+those modules, not this backend, for that coverage.
 
 ## Applying to a remote project
 

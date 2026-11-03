@@ -9,7 +9,6 @@ import ilovevi.shared.generated.resources.Res
 import ilovevi.shared.generated.resources.app_open_compilation_action
 import ilovevi.shared.generated.resources.app_stub_placeholder
 import ilovevi.shared.generated.resources.app_tab_music_title
-import ilovevi.shared.generated.resources.app_tab_news_title
 import ilovevi.shared.generated.resources.app_tab_settings_title
 import org.jetbrains.compose.resources.stringResource
 
@@ -26,14 +25,6 @@ internal fun MusicStubScreen(onOpenCompilation: () -> Unit) {
             modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenCompilation),
         )
     }
-}
-
-@Composable
-internal fun NewsStubScreen() {
-    TabStubScreen(
-        title = stringResource(Res.string.app_tab_news_title),
-        placeholder = stringResource(Res.string.app_stub_placeholder),
-    )
 }
 
 @Composable

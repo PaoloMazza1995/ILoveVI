@@ -7,25 +7,28 @@ import com.pamaz.vi.core.database.mapper.newsItemRowToNewsItem
 import com.pamaz.vi.core.model.FeedSource
 import com.pamaz.vi.core.model.FeedSourceId
 import com.pamaz.vi.core.model.NewsItem
+import com.pamaz.vi.core.model.NewsItemId
 import com.pamaz.vi.core.model.NewsTopic
 import kotlinx.coroutines.flow.Flow
 import kotlin.time.Instant
+
+private const val DEFAULT_NEWS_ITEM_LIMIT = 300
 
 interface NewsDao {
     fun feedSources(): Flow<List<FeedSource>>
     fun enabledFeedSources(topic: NewsTopic): Flow<List<FeedSource>>
 
-    /** The latest [limit] items for [topic], newest first. */
-    fun newsItems(topic: NewsTopic, limit: Int = 200): Flow<List<NewsItem>>
+    /** The latest [limit] live items, newest first, merged across every [NewsTopic] — the News screen filters client-side. */
+    fun newsItems(limit: Int = DEFAULT_NEWS_ITEM_LIMIT): Flow<List<NewsItem>>
 
     suspend fun upsertFeedSource(feedSource: FeedSource)
     suspend fun tombstoneFeedSource(id: FeedSourceId, deletedAt: Instant, updatedAt: Instant)
 
-    /** [NewsItem] has no backend table (device-local cache), so it's hard-deleted via [trimToLatest] rather than tombstoned. */
     suspend fun upsertNewsItem(newsItem: NewsItem)
+    suspend fun tombstoneNewsItem(id: NewsItemId, deletedAt: Instant, updatedAt: Instant)
 
-    /** Deletes every row for [topic] past the newest [keep] (by publishedAt), e.g. after a fetch. */
-    suspend fun trimToLatest(topic: NewsTopic, keep: Int = 200)
+    /** Tombstones every live [topic] item past the newest [keep] (by `publishedAt` desc) — see `NewsItems.sq`'s `selectStaleIds`. */
+    suspend fun trimNewsItems(topic: NewsTopic, keep: Int, deletedAt: Instant, updatedAt: Instant)
 }
 
 internal class NewsDaoImpl(database: IloveViDatabase) : NewsDao {
@@ -39,8 +42,8 @@ internal class NewsDaoImpl(database: IloveViDatabase) : NewsDao {
         feedSourcesQueries.selectEnabledByTopic(topic.name, ::feedSourceRowToFeedSource)
             .asListFlow()
 
-    override fun newsItems(topic: NewsTopic, limit: Int): Flow<List<NewsItem>> =
-        newsItemsQueries.selectByTopic(topic.name, limit.toLong(), ::newsItemRowToNewsItem)
+    override fun newsItems(limit: Int): Flow<List<NewsItem>> =
+        newsItemsQueries.selectAll(limit.toLong(), ::newsItemRowToNewsItem)
             .asListFlow()
 
     override suspend fun upsertFeedSource(feedSource: FeedSource) {
@@ -78,10 +81,32 @@ internal class NewsDaoImpl(database: IloveViDatabase) : NewsDao {
             imageUrl = newsItem.imageUrl,
             topic = newsItem.topic.name,
             fetchedAt = newsItem.fetchedAt.toEpochMilliseconds(),
+            updatedAt = newsItem.updatedAt.toEpochMilliseconds(),
+            deletedAt = null,
         )
     }
 
-    override suspend fun trimToLatest(topic: NewsTopic, keep: Int) {
-        newsItemsQueries.deleteOlderThanLatest(topic.name, keep.toLong())
+    override suspend fun tombstoneNewsItem(id: NewsItemId, deletedAt: Instant, updatedAt: Instant) {
+        newsItemsQueries.tombstone(
+            deletedAt.toEpochMilliseconds(),
+            updatedAt.toEpochMilliseconds(),
+            id.value
+        )
+    }
+
+    override suspend fun trimNewsItems(
+        topic: NewsTopic,
+        keep: Int,
+        deletedAt: Instant,
+        updatedAt: Instant
+    ) {
+        val staleIds = newsItemsQueries.selectStaleIds(topic.name, keep.toLong()).executeAsList()
+        staleIds.forEach { id ->
+            newsItemsQueries.tombstone(
+                deletedAt.toEpochMilliseconds(),
+                updatedAt.toEpochMilliseconds(),
+                id
+            )
+        }
     }
 }

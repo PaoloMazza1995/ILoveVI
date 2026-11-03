@@ -1,16 +1,26 @@
 package com.pamaz.vi.core.data.sync
 
 import com.pamaz.vi.core.data.connectivity.ConnectivityMonitor
+import com.pamaz.vi.core.data.news.FeedParseException
+import com.pamaz.vi.core.data.news.MAX_ITEMS_PER_TOPIC
+import com.pamaz.vi.core.data.news.ParsedFeedItem
+import com.pamaz.vi.core.data.news.mergeAndDedupe
+import com.pamaz.vi.core.data.news.parseFeed
 import com.pamaz.vi.core.database.IloveViDatabase
 import com.pamaz.vi.core.database.dao.CatalogDao
 import com.pamaz.vi.core.database.dao.MapDao
 import com.pamaz.vi.core.database.dao.MusicDao
+import com.pamaz.vi.core.database.dao.NewsDao
 import com.pamaz.vi.core.database.dao.SyncDao
+import com.pamaz.vi.core.database.inTransaction
+import com.pamaz.vi.core.model.FeedSource
+import com.pamaz.vi.core.model.FeedSourceId
 import com.pamaz.vi.core.model.Item
 import com.pamaz.vi.core.model.ItemId
 import com.pamaz.vi.core.model.MapConfig
 import com.pamaz.vi.core.model.MapPin
 import com.pamaz.vi.core.model.MapPinId
+import com.pamaz.vi.core.model.NewsTopic
 import com.pamaz.vi.core.model.Song
 import com.pamaz.vi.core.model.SongId
 import com.pamaz.vi.core.model.Station
@@ -19,9 +29,12 @@ import com.pamaz.vi.core.model.Vehicle
 import com.pamaz.vi.core.model.VehicleId
 import com.pamaz.vi.core.model.Weapon
 import com.pamaz.vi.core.model.WeaponId
+import com.pamaz.vi.core.network.NetworkResult
+import com.pamaz.vi.core.network.datasource.FeedSourceRemoteDataSource
 import com.pamaz.vi.core.network.datasource.ItemRemoteDataSource
 import com.pamaz.vi.core.network.datasource.MapConfigRemoteDataSource
 import com.pamaz.vi.core.network.datasource.MapPinRemoteDataSource
+import com.pamaz.vi.core.network.datasource.NewsFeedFetcher
 import com.pamaz.vi.core.network.datasource.SongRemoteDataSource
 import com.pamaz.vi.core.network.datasource.StationRemoteDataSource
 import com.pamaz.vi.core.network.datasource.VehicleRemoteDataSource
@@ -33,6 +46,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -45,6 +59,7 @@ internal class ContentSyncerImpl(
     private val catalogDao: CatalogDao,
     private val musicDao: MusicDao,
     private val mapDao: MapDao,
+    private val newsDao: NewsDao,
     private val mapConfigRemoteDataSource: MapConfigRemoteDataSource,
     private val stationRemoteDataSource: StationRemoteDataSource,
     private val weaponRemoteDataSource: WeaponRemoteDataSource,
@@ -52,6 +67,8 @@ internal class ContentSyncerImpl(
     private val itemRemoteDataSource: ItemRemoteDataSource,
     private val songRemoteDataSource: SongRemoteDataSource,
     private val mapPinRemoteDataSource: MapPinRemoteDataSource,
+    private val feedSourceRemoteDataSource: FeedSourceRemoteDataSource,
+    private val newsFeedFetcher: NewsFeedFetcher,
     private val connectivityMonitor: ConnectivityMonitor,
 ) : ContentSyncer {
 
@@ -83,6 +100,8 @@ internal class ContentSyncerImpl(
                 syncItems(),
                 syncSongs(),
                 syncMapPins(),
+                syncFeedSources(),
+                syncNews(),
             )
 
             _syncState.value = SyncState(
@@ -213,4 +232,86 @@ internal class ContentSyncerImpl(
             }
         },
     )
+
+    private suspend fun syncFeedSources(): String? = syncTable(
+        database = database,
+        syncDao = syncDao,
+        tableName = "feed_sources",
+        fetchPage = feedSourceRemoteDataSource::fetchChanges,
+        updatedAtOf = FeedSource::updatedAt,
+        applyChange = { change ->
+            val feedSource = change.item
+            val deletedAt = change.deletedAt
+            if (feedSource != null) {
+                newsDao.upsertFeedSource(feedSource)
+            } else if (deletedAt != null) {
+                newsDao.tombstoneFeedSource(FeedSourceId(change.id), deletedAt, deletedAt)
+            }
+        },
+    )
+
+    /**
+     * No backend `news_items` table to page through (see `:core:model`'s `NewsItem` KDoc) —
+     * instead, for every enabled [FeedSource] already synced locally by [syncFeedSources], fetches
+     * that feed's raw XML ([newsFeedFetcher]) and parses it ([parseFeed]) independently: one
+     * feed's network failure or malformed XML is recorded as its own error string and never stops
+     * any other feed's fetch, the same "one feed must not block the others" property this
+     * project's earlier backend `fetch-news` job's `orchestrate.ts` had. Every feed that did
+     * yield items is merged/de-duplicated in one pass ([mergeAndDedupe]), upserted, and each topic
+     * trimmed back down to [MAX_ITEMS_PER_TOPIC] — all inside one transaction, so a reader never
+     * sees a half-applied sync pass.
+     */
+    private suspend fun syncNews(): String? {
+        val feeds = newsDao.feedSources().first().filter { it.enabled }
+        if (feeds.isEmpty()) return null
+
+        val feedErrors = mutableListOf<String>()
+        val feedResults = mutableListOf<Pair<FeedSource, List<ParsedFeedItem>>>()
+
+        for (feed in feeds) {
+            val xml = when (val xmlResult = newsFeedFetcher.fetchXml(feed.url)) {
+                is NetworkResult.Success -> xmlResult.data
+                is NetworkResult.Offline -> {
+                    feedErrors.add("${feed.id.value}: offline")
+                    continue
+                }
+
+                is NetworkResult.Timeout -> {
+                    feedErrors.add("${feed.id.value}: timed out")
+                    continue
+                }
+
+                is NetworkResult.ServerError -> {
+                    feedErrors.add("${feed.id.value}: server error ${xmlResult.code}")
+                    continue
+                }
+
+                is NetworkResult.ParseError -> {
+                    feedErrors.add("${feed.id.value}: could not parse response")
+                    continue
+                }
+            }
+            try {
+                feedResults.add(feed to parseFeed(xml))
+            } catch (e: FeedParseException) {
+                feedErrors.add("${feed.id.value}: ${e.message}")
+            }
+        }
+
+        val merged = mergeAndDedupe(feedResults)
+        database.inTransaction {
+            merged.forEach { newsDao.upsertNewsItem(it) }
+            val now = Clock.System.now()
+            NewsTopic.entries.forEach { topic ->
+                newsDao.trimNewsItems(
+                    topic,
+                    MAX_ITEMS_PER_TOPIC,
+                    now,
+                    now
+                )
+            }
+        }
+
+        return feedErrors.takeIf { it.isNotEmpty() }?.joinToString("; ")
+    }
 }

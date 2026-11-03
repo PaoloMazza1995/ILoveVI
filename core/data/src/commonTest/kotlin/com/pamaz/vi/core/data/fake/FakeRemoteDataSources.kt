@@ -1,5 +1,6 @@
 package com.pamaz.vi.core.data.fake
 
+import com.pamaz.vi.core.model.FeedSource
 import com.pamaz.vi.core.model.Item
 import com.pamaz.vi.core.model.MapConfig
 import com.pamaz.vi.core.model.MapPin
@@ -9,9 +10,11 @@ import com.pamaz.vi.core.model.Vehicle
 import com.pamaz.vi.core.model.Weapon
 import com.pamaz.vi.core.network.Change
 import com.pamaz.vi.core.network.NetworkResult
+import com.pamaz.vi.core.network.datasource.FeedSourceRemoteDataSource
 import com.pamaz.vi.core.network.datasource.ItemRemoteDataSource
 import com.pamaz.vi.core.network.datasource.MapConfigRemoteDataSource
 import com.pamaz.vi.core.network.datasource.MapPinRemoteDataSource
+import com.pamaz.vi.core.network.datasource.NewsFeedFetcher
 import com.pamaz.vi.core.network.datasource.SongRemoteDataSource
 import com.pamaz.vi.core.network.datasource.StationRemoteDataSource
 import com.pamaz.vi.core.network.datasource.VehicleRemoteDataSource
@@ -60,3 +63,33 @@ internal class FakeMapConfigRemoteDataSource : FakeRemoteDataSourceCore<MapConfi
 
 internal class FakeMapPinRemoteDataSource : FakeRemoteDataSourceCore<MapPin>(),
     MapPinRemoteDataSource
+
+internal class FakeFeedSourceRemoteDataSource : FakeRemoteDataSourceCore<FeedSource>(),
+    FeedSourceRemoteDataSource
+
+/**
+ * A scriptable per-URL `fetchXml` queue — unlike [FakeRemoteDataSourceCore] (one `since`-paged
+ * queue per table), [NewsFeedFetcher] is called once per feed *url*, so each url gets its own
+ * queue. A url with nothing enqueued falls back to an empty-but-valid RSS feed rather than an
+ * error, so a test that doesn't care about a particular feed's content doesn't have to script one.
+ */
+internal class FakeNewsFeedFetcher : NewsFeedFetcher {
+    private val responses = mutableMapOf<String, ArrayDeque<NetworkResult<String>>>()
+    val requestedUrls = mutableListOf<String>()
+
+    fun enqueueXml(url: String, xml: String) = enqueue(url, NetworkResult.Success(xml))
+
+    fun enqueue(url: String, result: NetworkResult<String>) {
+        responses.getOrPut(url) { ArrayDeque() }.addLast(result)
+    }
+
+    override suspend fun fetchXml(url: String): NetworkResult<String> {
+        requestedUrls.add(url)
+        val queue = responses[url]
+        return if (queue != null && queue.isNotEmpty()) {
+            queue.removeFirst()
+        } else {
+            NetworkResult.Success("<rss version=\"2.0\"><channel></channel></rss>")
+        }
+    }
+}

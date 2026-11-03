@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 
@@ -27,6 +28,7 @@ class NewsDaoTest {
         publishedAt = base + publishedAtOffsetSeconds.seconds,
         topic = topic,
         fetchedAt = base,
+        updatedAt = base,
     )
 
     @Test
@@ -36,30 +38,52 @@ class NewsDaoTest {
         dao.upsertNewsItem(item("n2", 10))
         dao.upsertNewsItem(item("n3", 5))
 
-        val items = dao.newsItems(NewsTopic.NEWS, limit = 2).first()
+        val items = dao.newsItems(limit = 2).first()
         assertEquals(listOf("n2", "n3"), items.map { it.id.value })
     }
 
     @Test
-    fun itemsScopedByTopic() = runTest {
+    fun itemsMergedAcrossTopics() = runTest {
         val dao = NewsDaoImpl(testDatabase())
         dao.upsertNewsItem(item("n1", 0, NewsTopic.NEWS))
-        dao.upsertNewsItem(item("n2", 0, NewsTopic.MISSIONS))
+        dao.upsertNewsItem(item("n2", 10, NewsTopic.MISSIONS))
 
-        assertEquals(listOf("n1"), dao.newsItems(NewsTopic.NEWS).first().map { it.id.value })
-        assertEquals(listOf("n2"), dao.newsItems(NewsTopic.MISSIONS).first().map { it.id.value })
+        val items = dao.newsItems().first()
+        assertEquals(listOf("n2", "n1"), items.map { it.id.value })
     }
 
     @Test
-    fun trimToLatestKeepsOnlyNewest() = runTest {
+    fun tombstonedItemsAreExcluded() = runTest {
         val dao = NewsDaoImpl(testDatabase())
-        repeat(205) { i -> dao.upsertNewsItem(item("n$i", i.toLong())) }
+        dao.upsertNewsItem(item("n1", 0))
+        dao.upsertNewsItem(item("n2", 10))
 
-        dao.trimToLatest(NewsTopic.NEWS, keep = 200)
+        dao.tombstoneNewsItem(NewsItemId("n2"), deletedAt = base, updatedAt = base)
 
-        val remaining = dao.newsItems(NewsTopic.NEWS, limit = 1000).first()
-        assertEquals(200, remaining.size)
-        assertEquals("n204", remaining.first().id.value)
-        assertEquals("n5", remaining.last().id.value)
+        val items = dao.newsItems().first()
+        assertEquals(listOf("n1"), items.map { it.id.value })
+        assertFalse(items.any { it.id.value == "n2" })
+    }
+
+    @Test
+    fun upsertOverwritesExistingItem() = runTest {
+        val dao = NewsDaoImpl(testDatabase())
+        dao.upsertNewsItem(item("n1", 0))
+        dao.upsertNewsItem(item("n1", 0).copy(title = "Updated title"))
+
+        val items = dao.newsItems().first()
+        assertEquals("Updated title", items.single().title)
+    }
+
+    @Test
+    fun trimNewsItems_keepsOnlyTheNewestPerTopic_leavingTheOtherTopicUntouched() = runTest {
+        val dao = NewsDaoImpl(testDatabase())
+        (0 until 5).forEach { i -> dao.upsertNewsItem(item("news-$i", i.toLong(), NewsTopic.NEWS)) }
+        dao.upsertNewsItem(item("missions-1", 0, NewsTopic.MISSIONS))
+
+        dao.trimNewsItems(NewsTopic.NEWS, keep = 2, deletedAt = base, updatedAt = base)
+
+        val items = dao.newsItems().first()
+        assertEquals(listOf("news-4", "news-3", "missions-1"), items.map { it.id.value })
     }
 }

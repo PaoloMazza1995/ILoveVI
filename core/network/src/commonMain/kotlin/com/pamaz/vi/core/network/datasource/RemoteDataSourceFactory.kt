@@ -33,3 +33,6 @@ fun createMapPinRemoteDataSource(client: SupabaseClient): MapPinRemoteDataSource
 
 fun createFeedSourceRemoteDataSource(client: SupabaseClient): FeedSourceRemoteDataSource =
     FeedSourceRemoteDataSourceImpl(client)
+
+/** Unlike every other `create*` factory here, this one takes no [SupabaseClient] — a feed's URL is an arbitrary third-party HTTPS endpoint, never a Supabase table. */
+fun createNewsFeedFetcher(): NewsFeedFetcher = NewsFeedFetcherImpl()

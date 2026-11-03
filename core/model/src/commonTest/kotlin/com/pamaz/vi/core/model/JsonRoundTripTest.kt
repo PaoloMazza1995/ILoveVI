@@ -241,6 +241,7 @@ class JsonRoundTripTest {
                 imageUrl = "https://example.com/leak.jpg",
                 topic = NewsTopic.NEWS,
                 fetchedAt = now,
+                updatedAt = now,
             ),
         )
     }
@@ -248,7 +249,7 @@ class JsonRoundTripTest {
     @Test
     fun newsItem_nullableFieldsAbsentFromJson_decodeToNull() {
         val jsonText = """
-            {"id":"n1","feedId":"f1","title":"Leonida map leak","link":"https://example.com/leak","publishedAt":"2026-01-01T00:00:00Z","topic":"MISSIONS","fetchedAt":"2026-01-01T00:00:00Z"}
+            {"id":"n1","feedId":"f1","title":"Leonida map leak","link":"https://example.com/leak","publishedAt":"2026-01-01T00:00:00Z","topic":"MISSIONS","fetchedAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}
         """.trimIndent()
         val decoded = json.decodeFromString<NewsItem>(jsonText)
         assertNull(decoded.excerpt)

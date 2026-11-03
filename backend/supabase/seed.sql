@@ -31,4 +31,12 @@ insert into public.songs (id, title, artist, station_id) values
 
 insert into public.feed_sources (id, name, url, topic, enabled) values
   ('feed-1', '[Feed 1]', 'https://example.com/feed-1.xml', 'NEWS', true),
-  ('feed-2', '[Feed 2]', 'https://example.com/feed-2.xml', 'MISSIONS', true);
+  ('feed-2', '[Feed 2]', 'https://example.com/feed-2.xml', 'MISSIONS', true),
+  -- Real feed, added at the user's explicit request after confirming the trade-off: a Google
+  -- News RSS search for "GTA 6"/"Grand Theft Auto VI", not an official/curated source — a
+  -- keyword search can surface tangential results (opinion pieces, influencer takes), and this
+  -- repo has not independently verified Google's terms of use for this kind of scheduled,
+  -- programmatic consumption. The app fetches and parses this (and every other enabled feed_sources
+  -- url) directly on-device — see `:core:data`'s `ContentSyncerImpl.syncNews()` and
+  -- docs/ROADMAP.md's own notes for the full context.
+  ('google-news-gta6', '[Google News - GTA 6]', 'https://news.google.com/rss/search?q=%22GTA+6%22+OR+%22Grand+Theft+Auto+VI%22&hl=en-US&gl=US&ceid=US:en', 'NEWS', true);

@@ -6,12 +6,15 @@ import com.pamaz.vi.core.data.sync.SyncStatus
 import com.pamaz.vi.core.database.dao.createCatalogDao
 import com.pamaz.vi.core.database.dao.createMapDao
 import com.pamaz.vi.core.database.dao.createMusicDao
+import com.pamaz.vi.core.database.dao.createNewsDao
 import com.pamaz.vi.core.database.dao.createSyncDao
 import com.pamaz.vi.core.network.SupabaseClientProvider
 import com.pamaz.vi.core.network.config.SupabaseConfig
+import com.pamaz.vi.core.network.datasource.createFeedSourceRemoteDataSource
 import com.pamaz.vi.core.network.datasource.createItemRemoteDataSource
 import com.pamaz.vi.core.network.datasource.createMapConfigRemoteDataSource
 import com.pamaz.vi.core.network.datasource.createMapPinRemoteDataSource
+import com.pamaz.vi.core.network.datasource.createNewsFeedFetcher
 import com.pamaz.vi.core.network.datasource.createSongRemoteDataSource
 import com.pamaz.vi.core.network.datasource.createStationRemoteDataSource
 import com.pamaz.vi.core.network.datasource.createVehicleRemoteDataSource
@@ -59,6 +62,7 @@ class LocalSupabaseAcceptanceTest {
         val catalogDao = createCatalogDao(database)
         val musicDao = createMusicDao(database)
         val mapDao = createMapDao(database)
+        val newsDao = createNewsDao(database)
 
         val syncer = ContentSyncerImpl(
             database = database,
@@ -66,6 +70,7 @@ class LocalSupabaseAcceptanceTest {
             catalogDao = catalogDao,
             musicDao = musicDao,
             mapDao = mapDao,
+            newsDao = newsDao,
             mapConfigRemoteDataSource = createMapConfigRemoteDataSource(client),
             stationRemoteDataSource = createStationRemoteDataSource(client),
             weaponRemoteDataSource = createWeaponRemoteDataSource(client),
@@ -73,6 +78,8 @@ class LocalSupabaseAcceptanceTest {
             itemRemoteDataSource = createItemRemoteDataSource(client),
             songRemoteDataSource = createSongRemoteDataSource(client),
             mapPinRemoteDataSource = createMapPinRemoteDataSource(client),
+            feedSourceRemoteDataSource = createFeedSourceRemoteDataSource(client),
+            newsFeedFetcher = createNewsFeedFetcher(),
             connectivityMonitor = FakeConnectivityMonitor(),
         )
 

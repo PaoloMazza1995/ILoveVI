@@ -1,6 +1,9 @@
--- Mirrors :core:model's NewsItem. This is a device-local cache only (no backend table, see
--- backend/supabase/migrations/20261011120005_feed_sources.sql) so it has no updatedAt/deletedAt;
--- fetchedAt tracks when this device pulled it, and rows are hard-deleted by trimToLatest.
+-- Mirrors :core:model's NewsItem. A device-local cache of whatever ContentSyncer.syncNews() most
+-- recently fetched and parsed straight from each enabled feed_sources URL (no backend news_items
+-- table — see functional analysis section 9.3/8: NewsItem was always meant to be device-local).
+-- fetchedAt is when this device fetched the item from its RSS/Atom feed; updatedAt is the last
+-- time this local row changed (upsert or tombstone) — both are plain bookkeeping now, not sync
+-- cursors: there is nothing remote for them to be compared against.
 
 CREATE TABLE newsItemEntity (
     id TEXT NOT NULL PRIMARY KEY,
@@ -11,14 +14,22 @@ CREATE TABLE newsItemEntity (
     excerpt TEXT,
     imageUrl TEXT,
     topic TEXT NOT NULL,
-    fetchedAt INTEGER NOT NULL
+    fetchedAt INTEGER NOT NULL,
+    -- DEFAULT 0 matches 2.sqm's `ALTER TABLE ... ADD COLUMN updatedAt ... DEFAULT 0` exactly — an
+    -- ADD COLUMN's default can't be dropped without recreating the table, so a fresh install's
+    -- CREATE TABLE must carry the same default for `verifyCommonMainIloveViDatabaseMigration` to
+    -- agree the two schemas match. Every real row gets a real updatedAt from the DAO regardless.
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    deletedAt INTEGER
 );
 
-CREATE INDEX newsItemEntity_topic_publishedAt ON newsItemEntity(topic, publishedAt);
+CREATE INDEX newsItemEntity_publishedAt ON newsItemEntity(publishedAt);
 
-selectByTopic:
+-- Every live item, newest first, merged across topics: the News screen's filter (All/News/
+-- Missions) is applied client-side on this one list, not as separate per-topic queries.
+selectAll:
 SELECT * FROM newsItemEntity
-WHERE topic = :topic
+WHERE deletedAt IS NULL
 ORDER BY publishedAt DESC
 LIMIT :limit;
 
@@ -26,8 +37,8 @@ selectById:
 SELECT * FROM newsItemEntity WHERE id = :id;
 
 upsert:
-INSERT INTO newsItemEntity(id, feedId, title, link, publishedAt, excerpt, imageUrl, topic, fetchedAt)
-VALUES (:id, :feedId, :title, :link, :publishedAt, :excerpt, :imageUrl, :topic, :fetchedAt)
+INSERT INTO newsItemEntity(id, feedId, title, link, publishedAt, excerpt, imageUrl, topic, fetchedAt, updatedAt, deletedAt)
+VALUES (:id, :feedId, :title, :link, :publishedAt, :excerpt, :imageUrl, :topic, :fetchedAt, :updatedAt, :deletedAt)
 ON CONFLICT(id) DO UPDATE SET
     feedId = excluded.feedId,
     title = excluded.title,
@@ -36,17 +47,21 @@ ON CONFLICT(id) DO UPDATE SET
     excerpt = excluded.excerpt,
     imageUrl = excluded.imageUrl,
     topic = excluded.topic,
-    fetchedAt = excluded.fetchedAt;
+    fetchedAt = excluded.fetchedAt,
+    updatedAt = excluded.updatedAt,
+    deletedAt = excluded.deletedAt;
+
+tombstone:
+UPDATE newsItemEntity SET deletedAt = :deletedAt, updatedAt = :updatedAt WHERE id = :id;
 
 countByTopic:
-SELECT COUNT(*) FROM newsItemEntity WHERE topic = :topic;
+SELECT COUNT(*) FROM newsItemEntity WHERE topic = :topic AND deletedAt IS NULL;
 
-deleteOlderThanLatest:
-DELETE FROM newsItemEntity
-WHERE topic = :topic
-AND id NOT IN (
-    SELECT id FROM newsItemEntity
-    WHERE topic = :topic
-    ORDER BY publishedAt DESC
-    LIMIT :keep
-);
+-- Every live id for :topic past the newest :keep (by publishedAt desc) — ContentSyncer.syncNews()
+-- tombstones exactly these after each sync pass, keeping each topic capped at MAX_ITEMS_PER_TOPIC
+-- regardless of how many distinct feeds are enabled for it.
+selectStaleIds:
+SELECT id FROM newsItemEntity
+WHERE topic = :topic AND deletedAt IS NULL
+ORDER BY publishedAt DESC
+LIMIT -1 OFFSET :keep;

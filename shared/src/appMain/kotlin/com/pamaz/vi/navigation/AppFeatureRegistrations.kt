@@ -9,9 +9,9 @@ import com.pamaz.vi.feature.catalog.catalog.CatalogScreen
 import com.pamaz.vi.feature.catalog.detail.DetailScreen
 import com.pamaz.vi.feature.map.filters.MapFiltersScreen
 import com.pamaz.vi.feature.map.map.MapScreen
+import com.pamaz.vi.feature.news.news.NewsScreen
 import com.pamaz.vi.screens.CompilationScreen
 import com.pamaz.vi.screens.MusicStubScreen
-import com.pamaz.vi.screens.NewsStubScreen
 import com.pamaz.vi.screens.SettingsStubScreen
 
 /**
@@ -46,7 +46,7 @@ internal fun appFeatureRegistrations(
             onOpenCompilation = { navController.navigate(AppDestination.Secondary.Compilation.route) },
         )
     },
-    FeatureRegistration(AppDestination.Tab.News) { NewsStubScreen() },
+    FeatureRegistration(AppDestination.Tab.News) { NewsScreen() },
     FeatureRegistration(AppDestination.Tab.Settings) { SettingsStubScreen() },
 
     FeatureRegistration(AppDestination.Secondary.MapFilters) {

@@ -23,12 +23,15 @@ the backend and these tables; this module only owns the tables themselves.
   (integer sort order, no per-row string parsing), and converted to/from `kotlin.time.Instant` only
   at the mapper boundary (`Instant.fromEpochMilliseconds`/`.toEpochMilliseconds()`), the same
   `Instant` type `:core:model` uses everywhere (not kotlinx-datetime's).
-- **Content tables** (the ones mirroring a backend table) keep `updatedAt`/`deletedAt` and are
-  soft-deleted (`tombstone` sets `deletedAt`, never a SQL `DELETE`); every read query filters
-  `deletedAt IS NULL`. `news_items` is the one schema-section-2 table that's the exception: it has
-  no backend table (device-local cache only, per the functional analysis's data model — see
-  `backend/supabase/migrations/20261011120005_feed_sources.sql`'s comment), so it has no
-  `updatedAt`/`deletedAt` at all; its lifecycle is hard-delete via `trimToLatest`, not tombstoning.
+- **Content tables** (the ones mirroring a backend table, plus `news_items` — see below) keep
+  `updatedAt`/`deletedAt` and are soft-deleted (`tombstone` sets `deletedAt`, never a SQL
+  `DELETE`); every read query filters `deletedAt IS NULL`. `news_items` has no backend table behind
+  it at all (device-local cache only, per the functional analysis's data model — see
+  `backend/supabase/migrations/20261011120005_feed_sources.sql`'s comment): `:core:data`'s
+  `ContentSyncerImpl.syncNews()` fetches and parses every enabled `feed_sources` URL directly,
+  on-device, then upserts the result here and trims each topic back to its newest 200 rows
+  (`NewsDao.trimNewsItems`, tombstone-based, same convention as every other table) — the storage
+  shape is identical to a synced content table, only what populates it differs.
 - **Search (case/accent-insensitive)**: every searchable content table has a `searchKey` column
   (name/zone or title/artist, lowercased and Latin-accent-folded at write time by
   `foldForSearch()`), matched with a plain `LIKE '%...%'` against an equally-folded query string.
@@ -77,10 +80,12 @@ internal `*Impl` class and exposed through `databaseModule` (`com.pamaz.vi.core.
   (rewrites every row's `position` to match the given order, in one transaction). Only a single
   compilation is exercised by any UI in v1, per the roadmap step's scope, but the schema/DAO support
   any number of them.
-- **`NewsDao`**: `feedSources()`/`enabledFeedSources(topic)`, `newsItems(topic, limit = 200)`
-  (ordered `publishedAt DESC`), plus `upsertFeedSource`/`tombstoneFeedSource`, `upsertNewsItem` and
-  `trimToLatest(topic, keep = 200)` (hard-deletes everything past the newest `keep` rows for that
-  topic — see the "schema conventions" note on why `NewsItem` has no tombstone column).
+- **`NewsDao`**: `feedSources()`/`enabledFeedSources(topic)`, `newsItems(limit = 300)` (every live
+  item, newest `publishedAt` first, merged across topics — the News screen's All/News/Missions
+  filter is client-side), plus `upsertFeedSource`/`tombstoneFeedSource`,
+  `upsertNewsItem`/`tombstoneNewsItem`, and `trimNewsItems(topic, keep, deletedAt, updatedAt)`
+  (tombstones everything past the newest `keep` rows for that topic — same soft-delete convention as
+  every other table, see the "schema conventions" note above).
 - **`SyncDao`**: `lastSyncedAt(tableName)`/`setLastSyncedAt(tableName, at)` — delta-sync bookkeeping
   only. Upserting/tombstoning the content tables themselves is each feature DAO's job above, since
   they already own those tables' queries; a sync engine built on top calls both as needed.

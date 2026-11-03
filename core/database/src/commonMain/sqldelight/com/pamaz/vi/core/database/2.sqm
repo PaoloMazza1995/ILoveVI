@@ -1,0 +1,10 @@
+-- Step 12B: newsItemEntity moves from a device-local-cache shape (hard-deleted via
+-- deleteOlderThanLatest) to a proper synced-table shape (tombstones), matching feedSourceEntity.
+-- Existing rows get updatedAt = 0 (epoch) — harmless, since they're cache rows the next
+-- ContentSyncer pass overwrites with the server's real updatedAt anyway.
+
+ALTER TABLE newsItemEntity ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE newsItemEntity ADD COLUMN deletedAt INTEGER;
+
+DROP INDEX newsItemEntity_topic_publishedAt;
+CREATE INDEX newsItemEntity_publishedAt ON newsItemEntity(publishedAt);

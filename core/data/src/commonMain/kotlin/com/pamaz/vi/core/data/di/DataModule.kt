@@ -8,6 +8,8 @@ import com.pamaz.vi.core.data.repository.MapRepository
 import com.pamaz.vi.core.data.repository.MapRepositoryImpl
 import com.pamaz.vi.core.data.repository.MusicRepository
 import com.pamaz.vi.core.data.repository.MusicRepositoryImpl
+import com.pamaz.vi.core.data.repository.NewsRepository
+import com.pamaz.vi.core.data.repository.NewsRepositoryImpl
 import com.pamaz.vi.core.data.repository.SettingsRepository
 import com.pamaz.vi.core.data.repository.SettingsRepositoryImpl
 import com.pamaz.vi.core.data.seed.SeedImporter
@@ -27,6 +29,7 @@ val dataModule = module {
     single<MusicRepository> { MusicRepositoryImpl(get()) }
     single<MapRepository> { MapRepositoryImpl(get()) }
     single<SettingsRepository> { SettingsRepositoryImpl(get()) }
+    single<NewsRepository> { NewsRepositoryImpl(get()) }
 
     single<ConnectivityMonitor> { PlatformConnectivityMonitor(get()) }
 
@@ -39,6 +42,7 @@ val dataModule = module {
             catalogDao = get(),
             musicDao = get(),
             mapDao = get(),
+            newsDao = get(),
             mapConfigRemoteDataSource = get(),
             stationRemoteDataSource = get(),
             weaponRemoteDataSource = get(),
@@ -46,6 +50,8 @@ val dataModule = module {
             itemRemoteDataSource = get(),
             songRemoteDataSource = get(),
             mapPinRemoteDataSource = get(),
+            feedSourceRemoteDataSource = get(),
+            newsFeedFetcher = get(),
             connectivityMonitor = get(),
         )
     }

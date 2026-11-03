@@ -10,6 +10,8 @@ import com.pamaz.vi.core.network.datasource.MapConfigRemoteDataSource
 import com.pamaz.vi.core.network.datasource.MapConfigRemoteDataSourceImpl
 import com.pamaz.vi.core.network.datasource.MapPinRemoteDataSource
 import com.pamaz.vi.core.network.datasource.MapPinRemoteDataSourceImpl
+import com.pamaz.vi.core.network.datasource.NewsFeedFetcher
+import com.pamaz.vi.core.network.datasource.NewsFeedFetcherImpl
 import com.pamaz.vi.core.network.datasource.SongRemoteDataSource
 import com.pamaz.vi.core.network.datasource.SongRemoteDataSourceImpl
 import com.pamaz.vi.core.network.datasource.StationRemoteDataSource
@@ -23,8 +25,10 @@ import org.koin.dsl.module
 
 /**
  * Plain Koin, same style `:core:database`'s `databaseModule` / `:tools:map-editor`'s `appModule`
- * use — not the dormant koin-annotations/KSP convention plugin. Exposes only the remote data
- * sources (one per backend table) and the [SupabaseClient] they share; nothing here reads or
+ * use — not the dormant koin-annotations/KSP convention plugin. Exposes the remote data sources
+ * (one per backend table, sharing the one [SupabaseClient]) plus [NewsFeedFetcher] — not
+ * table-shaped, since news content is fetched straight from each `feed_sources` URL on-device,
+ * not read from a backend table (see `:core:model`'s `NewsItem` KDoc). Nothing here reads or
  * writes `:core:database`, since reconciling the two is a sync engine's job (`:core:data`, step
  * 7B), deliberately not this module's.
  */
@@ -38,4 +42,5 @@ val networkModule = module {
     single<MapConfigRemoteDataSource> { MapConfigRemoteDataSourceImpl(get()) }
     single<MapPinRemoteDataSource> { MapPinRemoteDataSourceImpl(get()) }
     single<FeedSourceRemoteDataSource> { FeedSourceRemoteDataSourceImpl(get()) }
+    single<NewsFeedFetcher> { NewsFeedFetcherImpl() }
 }

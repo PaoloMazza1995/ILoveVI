@@ -34,6 +34,8 @@ internal fun newsItemRowToNewsItem(
     imageUrl: String?,
     topic: String,
     fetchedAt: Long,
+    updatedAt: Long,
+    deletedAt: Long?,
 ): NewsItem = NewsItem(
     id = NewsItemId(id),
     feedId = FeedSourceId(feedId),
@@ -44,4 +46,5 @@ internal fun newsItemRowToNewsItem(
     imageUrl = imageUrl,
     topic = NewsTopic.valueOf(topic),
     fetchedAt = Instant.fromEpochMilliseconds(fetchedAt),
+    updatedAt = Instant.fromEpochMilliseconds(updatedAt),
 )
