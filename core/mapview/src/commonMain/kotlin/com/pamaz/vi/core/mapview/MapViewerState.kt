@@ -75,6 +75,17 @@ class MapViewerState internal constructor(
     val zoom: Float
         get() = zoomAnimatable.value
 
+    /**
+     * `true` while [zoom] is mid-[Animatable.animateTo] (a double-tap or +/- button zoom, whose
+     * destination is known the instant the animation starts) rather than being driven frame-by-frame
+     * via [snapTo] (an organic pinch, which only ever knows "where the finger is *right now*").
+     * [TileLayer] reads this to skip its 80ms "has the zoom level been stable" debounce for an
+     * animated zoom — see [com.pamaz.vi.core.mapview.tile.TileCacheConfig.ZOOM_LEVEL_REQUEST_STABILITY_MS]'s
+     * KDoc for why an animated zoom doesn't need that debounce at all.
+     */
+    val isZoomAnimating: Boolean
+        get() = zoomAnimatable.isRunning
+
     /** Last size [MapViewer] measured itself at, in pixels; [IntSize.Zero] before the first layout pass. */
     var viewportSize: IntSize by mutableStateOf(IntSize.Zero)
         internal set
@@ -112,21 +123,32 @@ class MapViewerState internal constructor(
 
     /**
      * Instantly jumps to [point]/[zoom] — used while a drag/pinch gesture is actively tracking the
-     * finger. [centerBoundsX]/[centerBoundsY] re-arm [centerXAnimatable]/[centerYAnimatable]'s own
-     * bounds for the *current* zoom/viewport (see [centerBoundsForAxis]) every call, so a bound
-     * left over from a different zoom level never lingers into the next gesture.
+     * finger, so called on every pointer-move event (potentially dozens of times a second) for the
+     * duration of a gesture. [centerBoundsX]/[centerBoundsY] re-arm [centerXAnimatable]/
+     * [centerYAnimatable]'s own bounds for the *current* zoom/viewport (see [centerBoundsForAxis])
+     * every call, so a bound left over from a different zoom level never lingers into the next
+     * gesture.
+     *
+     * Previously wrapped its three [Animatable.snapTo] calls in `coroutineScope { launch { ... } }`
+     * x3 — real overhead (child-coroutine creation/structured-concurrency bookkeeping) paid on
+     * every single call of a genuinely hot path, for zero benefit: [Animatable.snapTo] sets its
+     * value immediately rather than interpolating over frames, so there was never any actual
+     * concurrent work for those three launches to overlap. Three plain sequential `snapTo` calls
+     * are observably identical (all three values are updated before this function returns either
+     * way) at a fraction of the per-call cost — see the caller in `MapGestures.kt` for the other,
+     * larger half of this same fix (one coroutine launched per *gesture*, not per *event*).
      */
     internal suspend fun snapTo(
         point: NormalizedPoint,
         zoom: Float,
         centerBoundsX: ClosedFloatingPointRange<Float> = 0f..1f,
         centerBoundsY: ClosedFloatingPointRange<Float> = 0f..1f,
-    ) = coroutineScope {
+    ) {
         centerXAnimatable.updateBounds(centerBoundsX.start, centerBoundsX.endInclusive)
         centerYAnimatable.updateBounds(centerBoundsY.start, centerBoundsY.endInclusive)
-        launch { centerXAnimatable.snapTo(point.x.coerceIn(centerBoundsX)) }
-        launch { centerYAnimatable.snapTo(point.y.coerceIn(centerBoundsY)) }
-        launch { zoomAnimatable.snapTo(zoom.coerceIn(minZoom, maxZoom)) }
+        centerXAnimatable.snapTo(point.x.coerceIn(centerBoundsX))
+        centerYAnimatable.snapTo(point.y.coerceIn(centerBoundsY))
+        zoomAnimatable.snapTo(zoom.coerceIn(minZoom, maxZoom))
     }
 
     /**

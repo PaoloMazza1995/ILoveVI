@@ -32,6 +32,12 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
 
+    // WebP encode/decode for the tile pyramid's default format (see TilePyramidGenerator) — the
+    // JVM's own javax.imageio has no built-in WebP codec (unlike Android's BitmapFactory or
+    // Skia/Skiko, which both decode it natively). Bundles native libwebp for macOS (incl. arm64),
+    // Linux and Windows, registered as a normal ImageIO plugin via ServiceLoader.
+    implementation(libs.webp.imageio)
+
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlin.testJunit)
     testImplementation(libs.ktor.client.mock)

@@ -28,12 +28,12 @@ class SupabaseMapPublisherTest {
     fun tileUrlTemplate_resolvesToTheSamePathsObjectsAreUploadedUnder() {
         val template = tileUrlTemplate("https://project.supabase.co", mapVersion = 3)
         assertEquals(
-            "https://project.supabase.co/storage/v1/object/public/map-tiles/v3/{z}/{x}/{y}.png",
+            "https://project.supabase.co/storage/v1/object/public/map-tiles/v3/{z}/{x}/{y}.webp",
             template,
         )
 
         val resolvedUrl = TileUrl.build(template, z = 2, x = 1, y = 0)
-        val uploadedObjectPath = tileObjectPath(mapVersion = 3, relativePath = "2/1/0.png")
+        val uploadedObjectPath = tileObjectPath(mapVersion = 3, relativePath = "2/1/0.webp")
 
         assertTrue(resolvedUrl.endsWith("/map-tiles/$uploadedObjectPath"))
     }
@@ -83,7 +83,7 @@ class SupabaseMapPublisherTest {
             )
 
             val plan = (publisher.plan(sourceFile) as MapPublishPlanResult.Valid).plan
-            val tilePath = tileObjectPath(plan.mapVersion, "0/0/0.png")
+            val tilePath = tileObjectPath(plan.mapVersion, "0/0/0.${plan.format.extension}")
             val sourcePath = sourceImageObjectPath(plan.mapVersion, sourceFile.extension)
 
             // First attempt: the source image upload fails every time; the tile succeeds.

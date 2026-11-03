@@ -12,6 +12,7 @@ data class TileGenCliArgs(
     val mapVersion: Int?,
     val backgroundColor: Int,
     val tileSize: Int,
+    val format: TileFormat,
 )
 
 /** Parsed `tilegen generate-placeholder --out <path> [--width N] [--height N]` flags. */
@@ -22,7 +23,7 @@ data class PlaceholderCliArgs(
 )
 
 private const val USAGE = "usage: tilegen --source <url|path> --out <dir> [--upload] [--dry-run] " +
-        "[--map-version N] [--tile-size N] [--background-color RRGGBB]\n" +
+        "[--map-version N] [--tile-size N] [--background-color RRGGBB] [--format webp|png]\n" +
         "       tilegen generate-placeholder --out <path> [--width N] [--height N]"
 
 fun parseTileGenArgs(args: List<String>): TileGenCliArgs {
@@ -33,6 +34,7 @@ fun parseTileGenArgs(args: List<String>): TileGenCliArgs {
     var mapVersion: Int? = null
     var backgroundColor = TilePyramidGenerator.DEFAULT_BACKGROUND_COLOR
     var tileSize = 256
+    var format = TileFormat.WEBP
 
     var i = 0
     fun nextValue(flag: String): String {
@@ -53,6 +55,12 @@ fun parseTileGenArgs(args: List<String>): TileGenCliArgs {
                 ?: throw TileGenArgsException("--tile-size must be an integer")
 
             "--background-color" -> backgroundColor = parseHexColor(nextValue("--background-color"))
+            "--format" -> format = try {
+                TileFormat.fromExtension(nextValue("--format"))
+            } catch (e: IllegalArgumentException) {
+                throw TileGenArgsException(e.message ?: "invalid --format")
+            }
+
             else -> throw TileGenArgsException("unknown argument: ${args[i]}\n$USAGE")
         }
         i++
@@ -67,6 +75,7 @@ fun parseTileGenArgs(args: List<String>): TileGenCliArgs {
         mapVersion = mapVersion,
         backgroundColor = backgroundColor,
         tileSize = tileSize,
+        format = format,
     )
 }
 

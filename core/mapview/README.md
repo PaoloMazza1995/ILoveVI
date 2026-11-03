@@ -82,15 +82,195 @@ for every pin that zoom/viewport didn't merge, a `MapViewerItem.Cluster` for eve
   equivalent needed for clusters — so its generated JVM signature has a different arity regardless
   of the shared prefix's erasure.)
 
+## Tile pipeline
+
+Replaces this module's original Coil3-`AsyncImage`-per-tile approach (see git history) after it was
+confirmed to be the cause of visible reload flicker/black squares while zooming or panning with a
+real remote map. The fix is in `tile/` (all `internal`) plus `TileLayer.kt`'s own draw phase.
+
+### Diagnosis (what was actually wrong)
+
+Four confirmed root causes, found by reading the old implementation against the symptom (not
+assumed):
+
+1. **No hysteresis on the tile zoom level.** The old code picked the integer tile zoom by rounding
+   the continuous camera zoom *every frame*. Holding a pinch near e.g. zoom 2.0 made that rounding
+   flip between 2 and 3 on tiny finger tremor, and every flip changed every visible tile's identity
+   at once — a full tear-down/rebuild of the whole visible tile set, which is what actually read as
+   "tiles regenerating."
+2. **State read in composition, not the draw phase.** `state.zoom`/`state.center` being read inside
+   a `@Composable` body (rather than inside a `Canvas`/`DrawScope` lambda) meant every pinch/pan
+   frame recomposed the tile layer's whole subtree, re-issuing every tile's Coil request from
+   scratch — not just redrawing what was already there.
+3. **Cancel-and-restart every gesture frame.** Combined with (2), each recomposition could cancel
+   in-flight Coil requests for tiles still genuinely needed, immediately re-requesting them — wasted
+   network/decode work and a flash of "unloaded" in between.
+4. **No fallback rendering at all.** A tile not yet decoded (or one that failed) showed nothing —
+   Coil3's own "crossfade from empty" only has a *lower-resolution image* to fade from if something
+   actually draws one; nothing in the old code ever did. Hence the black/empty squares, not just
+   slow loads.
+
+[`TileZoomSelector`](src/commonMain/kotlin/com/pamaz/vi/core/mapview/tile/TileZoomSelector.kt) fixes
+(1); drawing everything in one `Canvas` lambda inside [`TileLayer`](
+src/commonMain/kotlin/com/pamaz/vi/core/mapview/TileLayer.kt) fixes (2); the debounced
+cancellation/request-stability logic in [`TileLoadCoordinator`](
+src/commonMain/kotlin/com/pamaz/vi/core/mapview/tile/TileLoadCoordinator.kt) fixes (3); ancestor
+fallback rendering (same file as (2)) fixes (4).
+
+**Three more, found by actually running the app** (none of the above required a real device to
+catch; these did — no unit test can exercise a `DrawScope` lambda's actual redraw timing):
+
+5. **The map only ever updated on a drag/pinch, never on its own.** `TileLayer`'s `Canvas` reads
+   `TileMemoryCache.peek(key)` — a plain function call into a [`MutableStateFlow`](
+   src/commonMain/kotlin/com/pamaz/vi/core/mapview/tile/TileMemoryCache.kt), not a Compose
+   [State][androidx.compose.runtime.State] read. A tile finishing its decode in the background
+   therefore never told the canvas to redraw; the map only ever picked it up as a side effect of
+   `state.zoom`/`state.center` changing (which *are* draw-observed) during some later gesture —
+   visible as pins (pure position math, no cache dependency) appearing to move before the map image
+   itself did, since the map was really just catching up on everything that had quietly finished
+   loading. Fixed by `TileMemoryCache.generation`, a real
+   [`mutableIntStateOf`][androidx.compose.runtime.mutableIntStateOf]-backed counter bumped on every
+   cache mutation; `TileLayer`'s draw lambda reads it once per frame purely to register the
+   dependency, so a tile arriving now redraws on its own.
+6. **Tiles never scaled continuously while pinching, only past the native zoom ceiling.** The scale
+   factor applied to the rendered tile grid was `2^(continuousZoom - min(continuousZoom,
+   nativeMaxZoom))` — exactly `1.0` for the *entire* native zoom range. Tiles stayed frozen at the
+   discrete, hysteresis-selected render level's fixed pixel size for most of a pinch (the render
+   level only updates once hysteresis lets it flip), so the map didn't visually zoom at all until
+   that sudden jump — you were staring at a static, unscaled tile grid, which is exactly why its
+   seams were visible. Fixed in [`tileRenderScaleFactor`](
+   src/commonMain/kotlin/com/pamaz/vi/core/mapview/TileLayer.kt): `2^(continuousZoom -
+   renderLevel)`, continuously, covering both "mid-pinch within native range" and "past the native
+   max" (overzoom) with one formula — extracted as a pure function (`TileRenderScaleFactorTest`)
+   specifically because the inline version, living only inside a `DrawScope` lambda, was untestable
+   without a real Compose UI harness.
+7. **Residual 1px seams from independent per-tile rounding.** Each tile's destination rect was
+   rounded independently (`screenX.roundToInt()`, `tileScreenSizePx.roundToInt()`); mostly gap-free
+   in principle (adjacent tiles differ by an exact integer, which rounds consistently), but visible
+   once (6) above started actually scaling the canvas up. Each tile's `dstSize` now overlaps its
+   neighbor by 1px — the standard fix for any tiled-image renderer.
+
+### Cache sizes
+
+[`TileCacheConfig`](src/commonMain/kotlin/com/pamaz/vi/core/mapview/tile/TileCacheConfig.kt) is
+every tunable, in one place:
+
+|                             | Mobile (Android/iOS) | Desktop/JVM |
+|-----------------------------|----------------------|-------------|
+| Decoded-bitmap memory cache | 96 MB                | 256 MB      |
+| Downloaded-tile disk cache  | 500 MB               | 2 GB        |
+
+Zoom levels `0..min(nativeMaxZoom, 3)` (capped at 85 tiles total, independent of aspect ratio) are
+**pinned**: never evicted from the memory cache, regardless of the byte budget, and preloaded the
+moment a map opens (`TileEngine.preloadPinnedLevels` — the same thing the app already did for
+offline use, reused here rather than reimplemented). This guarantees `findAncestorFallback` (below)
+always finds *something* to draw once a map has finished its initial load — the walk up never has to
+go further than the nearest pinned level.
+
+The disk cache is keyed by the tile's full URL and never revalidates a hit: every map version gets
+its own storage folder (`:tools:tilegen`'s README), so a URL's bytes are immutable once uploaded — a
+cache hit today is valid forever, no conditional-GET round trip needed.
+
+**Mobile memory safety**: on a low-memory signal (Android `onTrimMemory`/`onLowMemory`, iOS
+`UIApplication.didReceiveMemoryWarningNotification` — `observeLowMemorySignal`, a no-op on desktop),
+the memory cache immediately drops everything except the pinned overview levels
+(`TileMemoryCache.clearUnpinned`), so the map never goes fully blank even under real memory
+pressure, and rapid zooming can't pile up decoded bitmaps faster than normal LRU eviction would
+otherwise catch up with.
+
+### Loading policy
+
+[`TileLoadCoordinator`](src/commonMain/kotlin/com/pamaz/vi/core/mapview/tile/TileLoadCoordinator.kt)
+owns all of this:
+
+- **Priority**: viewport tiles at the target zoom first, then a one-tile prefetch ring around the
+  viewport, then the next zoom level's center tile once the current level has settled — three FIFO
+  queues, always drained in that order.
+- **Bounded parallelism** (`MAX_PARALLEL_REQUESTS = 8`), retry with exponential backoff
+  (`RETRY_MAX_ATTEMPTS = 3`) for a failed tile — a failure never breaks the map, and a failed tile
+  gets another chance the moment it's requested again as a viewport tile (re-entering view).
+- **In-flight de-duplication**: the same `(mapVersion, zoom, x, y)` key is only ever fetched once,
+  no matter how many times `request()` is called for it while it's already queued/in-flight — every
+  waiter shares the one underlying fetch.
+- **Debounced cancellation** (`VIEWPORT_STABILITY_DELAY_MS = 120`): a tile that's fallen out of view
+  is only cancelled once nothing has asked for it for 120ms, not the instant it's not visible — a
+  fast pinch/pan settles before anything is torn down.
+- **Debounced *new-level* requests** (`ZOOM_LEVEL_REQUEST_STABILITY_MS = 80`): during an organic
+  (finger-driven) zoom, a new integer level's tiles only start downloading once the zoom has sat
+  still for 80ms — an animated zoom (buttons, double-tap) skips this entirely, since its target
+  level is known the instant the animation starts. Fallback *drawing* (below) still updates every
+  frame regardless; this debounce only gates new network/disk work.
+
+**Thread safety.** With up to 8 fetches genuinely running in parallel, their completions resume on
+whatever thread the HTTP engine happens to use — a real, `MapViewerCameraStabilityUiTest`-caught
+`ConcurrentModificationException` the first version of this coordinator had, from several of those
+completions mutating a plain `HashMap`/`ArrayDeque` at once with no synchronization. The fix:
+`TileLoadCoordinator`'s own queues/maps are touched *only* from one coroutine (started once, in
+`init`), reached exclusively through a `Channel` — `request()` and a fetch job's completion both
+just `Channel.trySend` into it, which is lock-free and safe from any thread by construction. This
+reuses the exact confined-ownership pattern `MapGestures.kt`'s own `pendingSnaps` channel already
+established for the camera, rather than inventing a lock for the same class of problem.
+
+### Fallback rendering (no more black squares)
+
+[`TileLayer`](src/commonMain/kotlin/com/pamaz/vi/core/mapview/TileLayer.kt) draws every visible tile
+position at the target zoom from memory if it's there; otherwise it walks up to the nearest ancestor
+tile actually resident (`findAncestorFallback`, z-1, z-2, ... down to the pinned levels, which are
+guaranteed present), crops the right quarter/eighth/... of it, and scales that up — exactly the
+"previous, lower-resolution image stays visible, enlarged" behavior every slippy map (Google Maps
+included) uses instead of a blank tile. Once the real tile arrives, it cross-fades in over
+`CROSSFADE_DURATION_MS = 150`ms (skipped — straight to the real tile — for a tile that was already
+resident, and for every tile when the system's reduced-motion setting is on;
+`TileCacheConfig`'s own KDoc has the exact mechanism). Everything — fallback, crossfade, real tile —
+draws in one `Canvas`/`DrawScope` lambda, with `state.zoom`/`state.center` read *inside* that
+lambda, never in `TileLayer`'s own composable body: a pinch/pan never recomposes this tree, only the
+draw phase re-runs.
+
+### Overzoom
+
+`TileCacheConfig.OVERZOOM_LEVELS = 3` — the user's camera zoom can go 3 levels past a map's native
+maximum (up to 8x enlargement): past that point, `TileLayer` simply scales up the sharpest real
+tiles available (`FilterQuality.Medium`), via one `Canvas.scale(...)` wrapping the whole tile draw
+loop. `MapViewer`'s camera zoom ceiling is `nativeMaxZoom + OVERZOOM_LEVELS`; `TileLayer`/
+`TileLoadCoordinator` only ever request/render tiles at `min(cameraZoom, nativeMaxZoom)` — no tile
+coordinate beyond the real pyramid is ever asked for. Pan limits (`centerBoundsForAxis`) stay
+correct at an overzoomed scale for free: `TileScheme.scaleAt(zoom: Float)` has no upper clamp, so
+the same `2^(zoom - maxZoom)` formula just keeps extrapolating past the native ceiling.
+
+[`TILE_OVERZOOM_LEVELS`](src/commonMain/kotlin/com/pamaz/vi/core/mapview/TileOverzoom.kt) is a
+public re-export of the same constant, for callers like `:tools:map-editor`'s "Load map image.../Map
+info" dialogs that need to show the detail ratio without reaching into this module's internal `tile`
+package.
+
+### Debug overlay
+
+[`TileDebugOverlay`](src/commonMain/kotlin/com/pamaz/vi/core/mapview/TileDebugOverlay.kt) (off by
+default; `debugOverlayEnabled` on `MapViewer`) shows current/tile zoom, tiles visible/in-memory/
+loading/failed, memory+disk hit rates and requests/sec — `TileCacheMetrics`'s own numbers, polled at
+a slow fixed rate (not every draw frame). `MapViewBuildConfig.debugOverlaySupported` makes it truly
+*absent* from a release build of the app, regardless of what a caller passes for
+`debugOverlayEnabled` — the same release gate `MapViewBuildConfig.singleImageDevModeEnabled` already
+uses. `:tools:map-editor`'s `MapArea.kt` is the one real caller: a hidden `Ctrl+Shift+D` shortcut
+toggles it (no visible button/menu entry — this is a debug tool, not a product feature);
+`:feature:map` never enables this in the shipped app.
+
+### Scripted benchmark
+
+[`rememberTileBenchmarkTrigger`](
+src/commonMain/kotlin/com/pamaz/vi/core/mapview/TileBenchmarkRunner.kt) (public `@Composable`) zoom-
+sweeps a fresh, throwaway tile engine from a map's native min to max zoom and back, twice, and
+reports requests/sec, duplicate network fetches (should be `0`), the second pass's cache hit rate,
+and simulated per-step frame-time percentiles — the TESTS section's "scripted benchmark in the
+editor (debug only)". `:tools:map-editor`'s `MapArea.kt` wires it to a second hidden shortcut
+(`Ctrl+Shift+B`), printing the report to stdout; `:feature:map` never calls this. The underlying
+`runTileZoomSweepBenchmark`/`TileBenchmarkResult` (both `internal`) are unit-tested against a fake
+`TileFetcher` in `TileBenchmarkTest`.
+
 ## Behavior notes
 
-- **Tiles**: `TileScheme.visibleTiles` (from `:core:model`) decides which tiles are needed;
-  `TileUrl.build` turns each into a URL; Coil3's `AsyncImage` loads it. Every tile is a flat
-  `bg800` box with the image layered on top — the same "neutral placeholder first, image on top"
-  idiom `core/design`'s `NewsThumbnail` already uses — so a tile that's loading or that failed just
-  shows the placeholder underneath, never anything broken, and one failed tile can't affect any
-  other tile. Coil3's default memory+disk cache is keyed by the request's URL, which already encodes
-  map version/zoom/tile coordinates, so no custom cache key was needed.
+- **Tiles**: see "Tile pipeline" above for the full loading/fallback/overzoom story.
+  `TileScheme.visibleTiles` (from `:core:model`) still decides which grid of tiles is needed at a
+  given zoom; `TileUrl.build` still turns each into a URL.
 - **Pins and clusters**: one overlay layer (`PinLayer`), each pin/cluster offset from its
   `NormalizedPoint` via the exact same `MapViewport.toScreen` conversion the tile layer's math is
   built on — pins, clusters and tiles can never drift apart at any zoom, since all three derive from
@@ -135,11 +315,28 @@ real frame time from here. What *was* verified:
 **Still to confirm on a real device/emulator before shipping**: actual rendered frame times while
 panning/pinching with 1000 pins; that the three independent gesture `pointerInput` blocks
 (pan/pinch/ fling, tap/double-tap, scroll-wheel) don't fight each other in practice on a real
-touchscreen; Coil3's disk cache behavior on-device; the `MapViewerWithOneThousandPinsPreview` /
-placeholder-tile previews rendering correctly in Android Studio / Xcode preview; and (new with
-cluster support) `MapViewerWithPinsAndClustersPreview` actually showing pins and badges together on
-a real screen, that tapping a cluster badge visibly zooms in via `animateToBounds`, and that the
-"selected pin always on top of a cluster" draw order looks right when they visually overlap.
+touchscreen; the `MapViewerWithOneThousandPinsPreview` / placeholder-tile previews rendering
+correctly in Android Studio / Xcode preview; and (new with cluster support)
+`MapViewerWithPinsAndClustersPreview` actually showing pins and badges together on a real screen,
+that tapping a cluster badge visibly zooms in via `animateToBounds`, and that the "selected pin
+always on top of a cluster" draw order looks right when they visually overlap.
+
+**Tile pipeline, specifically**: `TileZoomSelector` (hysteresis), `TileMemoryCache` (LRU-by-bytes,
+pinned-never-evicted), `findAncestorFallback` (crop rects for z-1/z-2/z-3), and
+`TileLoadCoordinator` (in-flight dedup — 100 concurrent requests for one tile = 1 fetch; priority
+drain order; retry/backoff; stability-delay sweep) are all unit-tested in `jvmTest`/`commonTest`
+against fakes, with real coroutines/virtual time but no real network, display, or gesture input —
+see each test file's own KDoc. The scripted zoom-sweep benchmark (`TileBenchmarkRunner.kt`,
+`TileBenchmarkTest`) likewise proves its *measurement logic* (duplicate counting, hit-rate
+calculation) against a fake, instant-success fetcher; its "requests/sec" and "frame time p50/p95ms"
+numbers, when run for real via `:tools:map-editor`'s hidden shortcut, measure the pure-Kotlin cost
+of tile-selection-and-request work (same honest scope as `MapViewerPerfTest`
+above), not an actual rendered Compose frame — there is no display here to measure that from. **Not
+yet confirmed**: the real root-cause fixes actually eliminating visible flicker against a real
+remote map on a real device (the diagnosis above was derived by reading the old implementation
+against the reported symptom, not by watching the bug reproduce and then disappear); the
+low-memory-signal response actually preventing an OOM crash while zooming quickly on a real low-end
+Android device/emulator.
 
 ## Used by the app module (step 8)
 

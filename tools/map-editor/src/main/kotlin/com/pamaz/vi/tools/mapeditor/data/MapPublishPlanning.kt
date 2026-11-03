@@ -5,6 +5,8 @@ import com.pamaz.vi.tools.mapeditor.model.DbPin
 import com.pamaz.vi.tools.mapeditor.model.MapPublishPlan
 import com.pamaz.vi.tools.mapeditor.model.MapVersionAction
 import com.pamaz.vi.tools.tilegen.ImageDimensions
+import com.pamaz.vi.tools.tilegen.TileFormat
+import com.pamaz.vi.tools.tilegen.TilePyramidGenerator
 import java.io.File
 
 /**
@@ -17,8 +19,13 @@ import java.io.File
  * implementation's own class.
  */
 object MapPublishPlanning {
-    /** §2a: "size at most 16384 px per side." */
-    const val MAX_DIMENSION_PX = 16384
+    /**
+     * Task item 7a: "allow images up to 32768 px per side" — raised from the Functional
+     * Analysis's original 16384 once the tile pipeline's memory-bounded, strip-based generation
+     * (see [TilePyramidGenerator]'s own KDoc) was confirmed to scale to it without holding the
+     * whole decoded image in memory at any point.
+     */
+    const val MAX_DIMENSION_PX = 32768
 
     /** §2a: "file size limit with a clear message" — generous for a full-res game map PNG, still well short of anything that would stall a desktop upload. */
     const val MAX_SOURCE_IMAGE_BYTES = 50L * 1024 * 1024
@@ -78,12 +85,26 @@ object MapPublishPlanning {
         }
     }
 
-    /** §2b: tile size 256, zoom/tile-count computed from the image's own size — reuses `core:model`'s [TileScheme], never a second implementation of this math. */
+    /**
+     * §2b: tile size 256, zoom/tile-count computed purely from [dimensions] — reuses
+     * `core:model`'s [TileScheme], never a second implementation of this math, and deliberately
+     * never touches [file]'s actual bytes (dimension reading already happened separately, via
+     * [readImageDimensions][com.pamaz.vi.tools.tilegen.readImageDimensions] — keeping this
+     * function pure/fast is what lets a test call it with a `File` that doesn't even exist on
+     * disk). [tileUrlTemplate] must already be registered with [format]'s own extension (every
+     * caller builds it that way — see [com.pamaz.vi.tools.mapeditor.data.supabase.tileUrlTemplate]/
+     * [com.pamaz.vi.tools.mapeditor.data.fake.FakeMapPublisher]). [estimatedStorageBytes] is the
+     * caller's own job to compute (from real sample tiles, via
+     * [TilePyramidGenerator.sampleTileByteSizes][com.pamaz.vi.tools.tilegen.TilePyramidGenerator.sampleTileByteSizes])
+     * — that *does* need the real file, so it stays out of this otherwise-pure function.
+     */
     fun buildPlan(
         file: File,
         dimensions: ImageDimensions,
         tileUrlTemplate: String,
         decision: VersionDecision,
+        format: TileFormat = TileFormat.WEBP,
+        estimatedStorageBytes: Long = 0L,
     ): MapPublishPlan {
         val scheme = TileScheme(dimensions.widthPx, dimensions.heightPx, TILE_SIZE)
         val tileCount = (scheme.minZoom..scheme.maxZoom).sumOf { zoom ->
@@ -101,6 +122,35 @@ object MapPublishPlanning {
             versionAction = decision.action,
             pinsToReposition = decision.pinsToReposition,
             tileUrlTemplate = tileUrlTemplate,
+            format = format,
+            estimatedStorageBytes = estimatedStorageBytes,
         )
+    }
+
+    /** The caller-side half of [estimatedStorageBytes] above — a few real encoded sample tiles, averaged and scaled to the full pyramid's tile count. Needs the real file, unlike [buildPlan] itself. */
+    fun estimateStorageBytes(file: File, dimensions: ImageDimensions, format: TileFormat): Long {
+        val scheme = TileScheme(dimensions.widthPx, dimensions.heightPx, TILE_SIZE)
+        val tileCount = (scheme.minZoom..scheme.maxZoom).sumOf { zoom ->
+            scheme.tilesWide(zoom) * scheme.tilesHigh(zoom)
+        }
+        val sampleSizes = TilePyramidGenerator.sampleTileByteSizes(file.toPath(), scheme, format)
+        val averageTileBytes = if (sampleSizes.isEmpty()) 0L else sampleSizes.average().toLong()
+        return averageTileBytes * tileCount
+    }
+
+    /** `null` means no warning needed. See [SupabaseStorageLimits]' own KDoc for where these numbers come from. */
+    fun storageWarning(estimatedStorageBytes: Long): String? {
+        val threshold =
+            (SupabaseStorageLimits.FREE_PLAN_TOTAL_STORAGE_BYTES * SupabaseStorageLimits.WARNING_THRESHOLD_FRACTION).toLong()
+        if (estimatedStorageBytes < threshold) return null
+        val estimatedMb = estimatedStorageBytes / (1024 * 1024)
+        val freeMb = SupabaseStorageLimits.FREE_PLAN_TOTAL_STORAGE_BYTES / (1024 * 1024)
+        return if (estimatedStorageBytes >= SupabaseStorageLimits.FREE_PLAN_TOTAL_STORAGE_BYTES) {
+            "This map version is estimated at ~${estimatedMb}MB, which exceeds the Supabase Free plan's " +
+                    "${freeMb}MB total file storage. Upgrading to Pro (100GB included) is likely needed."
+        } else {
+            "This map version is estimated at ~${estimatedMb}MB — getting close to the Supabase Free " +
+                    "plan's ${freeMb}MB total file storage."
+        }
     }
 }

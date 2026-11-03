@@ -23,9 +23,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.dp
+import com.pamaz.vi.core.mapview.TILE_OVERZOOM_LEVELS
 import com.pamaz.vi.core.mapview.loadSingleImageMapContentFromFile
 import com.pamaz.vi.design.IloveViColors
 import com.pamaz.vi.design.IloveViSpacing
+import com.pamaz.vi.tools.mapeditor.data.MapPublishPlanning
 import com.pamaz.vi.tools.mapeditor.model.MapPublishPhase
 import com.pamaz.vi.tools.mapeditor.model.MapPublishPlan
 import com.pamaz.vi.tools.mapeditor.model.MapPublishStep
@@ -154,6 +156,29 @@ private fun ConfirmContent(plan: MapPublishPlan?, invalidReason: String?, isAdmi
             color = IloveViColors.inkMuted,
             style = MaterialTheme.typography.bodySmall,
         )
+        Text(
+            "1 image pixel = 1 screen pixel at zoom ${plan.maxZoom}; beyond it the map is enlarged " +
+                    "(up to ${1 shl TILE_OVERZOOM_LEVELS}x, $TILE_OVERZOOM_LEVELS extra zoom levels).",
+            color = IloveViColors.inkMuted,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = IloveViSpacing.space1),
+        )
+
+        val estimatedMb = plan.estimatedStorageBytes / (1024.0 * 1024.0)
+        Text(
+            "Estimated storage: ~${(estimatedMb * 10).toInt() / 10.0}MB",
+            color = IloveViColors.inkMuted,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = IloveViSpacing.space1),
+        )
+        MapPublishPlanning.storageWarning(plan.estimatedStorageBytes)?.let { warning ->
+            Text(
+                warning,
+                color = IloveViColors.warningYellow,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = IloveViSpacing.space1),
+            )
+        }
 
         Text(
             when (plan.versionAction) {

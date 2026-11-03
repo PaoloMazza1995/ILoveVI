@@ -28,6 +28,7 @@ coil = "3.6.3"
 compottie= "2.0.2"
 kotlinx-serialization = "1.11.0"
 sqldelight = "2.0.2"
+webp-imageio = "0.10.0"
 supabase = "3.1.4"
 kotlin-csv = "1.10.0"
 koin = "4.1.1"
@@ -87,6 +88,7 @@ supabase_storage = { group = "io.github.jan-tennert.supabase", name = "storage-k
 
 kotlin_csv = { group = "com.github.doyaaaaaken", name = "kotlin-csv-jvm", version.ref = "kotlin-csv" }
 
+webp_imageio = { group = "com.github.usefulness", name = "webp-imageio", version.ref = "webp-imageio" }
 sqldelight_runtime = { group = "app.cash.sqldelight", name = "runtime", version.ref = "sqldelight" }
 sqldelight_coroutines = { group = "app.cash.sqldelight", name = "coroutines-extensions", version.ref = "sqldelight" }
 sqldelight_android_driver = { group = "app.cash.sqldelight", name = "android-driver", version.ref = "sqldelight" }

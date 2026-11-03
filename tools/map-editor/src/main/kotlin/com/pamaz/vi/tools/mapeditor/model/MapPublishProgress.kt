@@ -37,6 +37,9 @@ data class MapPublishPlan(
     /** Only non-zero for [MapVersionAction.NEW_VERSION] — every pin that will now be on an older version than [mapVersion]. */
     val pinsToReposition: Int,
     val tileUrlTemplate: String,
+    val format: com.pamaz.vi.tools.tilegen.TileFormat,
+    /** From [com.pamaz.vi.tools.tilegen.TilePyramidGenerator.sampleTileByteSizes] — a few real encoded tile sizes, averaged and multiplied by [tileCount], shown in the confirmation dialog *before* any real generation starts. */
+    val estimatedStorageBytes: Long,
 )
 
 sealed interface MapPublishPlanResult {

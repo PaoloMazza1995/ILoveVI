@@ -28,6 +28,18 @@ class FakeMapPublisherTest {
         return file
     }
 
+    /** Task item 7b: the "Load map image..." dialog must show a storage estimate *before* generation starts — [MapPublishPlanning.buildPlan]'s own `estimatedStorageBytes` field must actually be populated from real sample tiles, not left at its `0L` default. */
+    @Test
+    fun plan_populatesEstimatedStorageBytes_fromRealSampleTiles() = runBlocking {
+        val publisher = FakeMapPublisher(FakeMapConfigRepository(), FakePinRepository())
+        val result = publisher.plan(sourceImageFile())
+        val plan = (result as MapPublishPlanResult.Valid).plan
+        assertTrue(
+            plan.estimatedStorageBytes > 0L,
+            "expected a non-zero storage estimate before any generation"
+        )
+    }
+
     @Test
     fun aFailureBeforeRegister_neverTouchesMapConfig() = runBlocking {
         val mapConfigRepository = FakeMapConfigRepository()

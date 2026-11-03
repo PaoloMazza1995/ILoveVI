@@ -105,11 +105,12 @@ private val pinEntry = MapPinWithEntryName(
  * test environment), it can be found by content description directly. The "View details" button
  * still gets a `testTag` for the same reason `DetailScreen.kt`'s "Show on map" button did.
  *
- * [setUpMainDispatcher]/[tearDownMainDispatcher]: `MapLoadedContent`'s tile-prefetch
- * (`TilePrefetch.kt`) builds a Coil3 `ImageLoader`, which lazily reads `Dispatchers.Main
- * .immediate` — absent in a plain JVM test with no real UI framework main loop, unless a test
- * dispatcher is installed as `Main` first (same requirement `CatalogViewModelTest`'s KDoc explains
- * for `viewModelScope`, here triggered by Coil instead).
+ * [setUpMainDispatcher]/[tearDownMainDispatcher]: kept defensively even though the tile-prefetch
+ * path that originally required it (`TilePrefetch.kt`'s Coil3 `ImageLoader`, which lazily read
+ * `Dispatchers.Main.immediate`) is gone — `:core:mapview`'s own pinned-levels preload replaced it
+ * (see that module's README) and uses a plain `rememberCoroutineScope()`, which this Compose UI
+ * test's own rule already services without a `Main` dispatcher. Left in place since removing it
+ * isn't this step's concern and a redundant test-dispatcher install is harmless.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class MapPinToDetailUiTest {

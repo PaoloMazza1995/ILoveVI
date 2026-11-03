@@ -305,4 +305,40 @@ class MapGeometryTest {
 
         assertTrue(zoom > smallScheme.maxZoom.toFloat())
     }
+
+    // --- Overzoom (task item 6): the camera's own zoom ceiling is `nativeMaxZoom +
+    // TileCacheConfig.OVERZOOM_LEVELS`, strictly above scheme.maxZoom — these tests cover the two
+    // pure-math pieces MapViewer.kt/MapGestures.kt build that ceiling and its pan limits from. ---
+
+    @Test
+    fun scaleAt_continuesSmoothlyPastSchemeMaxZoom_forOverzoom() {
+        // scheme.maxZoom = 5 for an 8192x6144 image; overzoom asks for up to +3 beyond it (8x).
+        val atMaxZoom = scheme.scaleAt(scheme.maxZoom.toFloat())
+        val overzoomed =
+            scheme.scaleAt(scheme.maxZoom.toFloat() + com.pamaz.vi.core.mapview.tile.TileCacheConfig.OVERZOOM_LEVELS)
+
+        assertAlmostEquals(1f, atMaxZoom.toFloat())
+        // 2^OVERZOOM_LEVELS = 8x enlargement past the native maximum, continuing the exact same
+        // doubling formula — not clamped, not a different curve past the native ceiling.
+        assertAlmostEquals(8f, overzoomed.toFloat())
+    }
+
+    @Test
+    fun centerBoundsForAxis_atAnOverzoomedScale_stillProducesAValidNonCrossedRange() {
+        val overzoomedZoom =
+            scheme.maxZoom.toFloat() + com.pamaz.vi.core.mapview.tile.TileCacheConfig.OVERZOOM_LEVELS
+        val scale = scheme.scaleAt(overzoomedZoom)
+        val viewportWidthPx = 1080f
+
+        val bounds = centerBoundsForAxis((scheme.widthPx * scale).toFloat(), viewportWidthPx)
+
+        // The image is now far larger than the viewport (8x enlargement on top of an already
+        // large source), so the pan range must be a real, non-degenerate interval close to the
+        // image's own full 0..1 extent — never crossed (start > end) and never collapsed back to
+        // the single-point 0.5f..0.5f "image smaller than viewport" case from
+        // `centerBoundsForAxis_locksToCenter_whenImageFitsInsideViewport` above.
+        assertTrue(bounds.start < bounds.endInclusive)
+        assertTrue(bounds.start > 0f && bounds.start < 0.5f)
+        assertAlmostEquals(1f - bounds.start, bounds.endInclusive)
+    }
 }

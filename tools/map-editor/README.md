@@ -75,16 +75,22 @@ a real email/password against your project's Auth, and admin status comes from t
 ## Loading a map from the tool (PLT-08)
 
 From the empty state ("No map loaded"), press **"Load map image..."** and pick a PNG/JPEG map image
-(at most 16384px per side, `data/MapPublishPlanning.kt`'s `MAX_DIMENSION_PX`) — the tool does
-everything else, with no commands or SQL to run by hand:
+(at most 32768px per side, `data/MapPublishPlanning.kt`'s `MAX_DIMENSION_PX` — raised from the
+original 16384 once `:tools:tilegen`'s strip-based tiling was confirmed to scale that far without
+loading the whole decoded image into memory) — the tool does everything else, with no commands or
+SQL to run by hand:
 
 1. **Validate** — format, readability, file size, dimension limit; the dialog shows the image size
    and a preview, or a plain-words reason it can't proceed.
 2. **Compute** — tile size 256, `min_zoom`/`max_zoom`/tile count from the image's own width and
    height (reusing `core:model.map.TileScheme`'s math, never a second implementation of it): a
-   4096x4096 image reaches zoom 4. Non-square images keep their own width/height — `TileScheme` and
+   4096x4096 image reaches zoom 4 (341 tiles total, 0 through 4); 8192/16384/32768px reach zoom
+   5/6/7 (1365/5461/21845 tiles). Non-square images keep their own width/height — `TileScheme` and
    `core:mapview`'s `MapViewport` already handle independent width/height end to end, so nothing is
-   padded to a square canvas.
+   padded to a square canvas. The dialog also shows "1 image pixel = 1 screen pixel at zoom N;
+   beyond it the map is enlarged" (`core:mapview`'s `TILE_OVERZOOM_LEVELS` — up to 8x past the
+   native max) and an estimated upload size from a few real encoded sample tiles, with a warning if
+   that estimate gets close to the Supabase plan's storage limit (`data/SupabaseStorageLimits.kt`).
 3. **Generate** — the tile pyramid, in a temporary folder, via `:tools:tilegen`'s own
    `TilePyramidGenerator` (shared, not duplicated).
 4. **Upload** — tiles and the source image to the `map-tiles` Storage bucket under
@@ -102,9 +108,16 @@ everything else, with no commands or SQL to run by hand:
 7. **Reload** — the editor shows the newly published map immediately.
 
 The header's **Map** menu always has **"Replace map..."** (same flow) and **"Map info"** (version,
-size, zoom levels, and the exact `tile_url_template` — for reference only, never something to type
-by hand). Only a signed-in admin can confirm a publish; anyone else sees why the button is disabled,
-same gate `isCommittable` already uses elsewhere in this tool.
+size, the native zoom levels, the overzoom levels and total detail ratio on top of them, and the
+exact `tile_url_template` — for reference only, never something to type by hand). Only a signed-in
+admin can confirm a publish; anyone else sees why the button is disabled, same gate
+`isCommittable` already uses elsewhere in this tool.
+
+**Two hidden debug shortcuts**, deliberately not in any menu (debug tools, not product features):
+`Ctrl+Shift+D` toggles `core:mapview`'s tile debug overlay (current/tile zoom, cache hit rates,
+requests/sec) on top of the map; `Ctrl+Shift+B` runs the scripted zoom-sweep benchmark (TESTS
+section) against the currently loaded map, printing its report — request/duplicate counts, cache hit
+rate, frame-time percentiles — to stdout.
 
 **How to check the result**: open **Map info** afterward and confirm version/size/zoom levels match
 the image just loaded; the map should render at every zoom immediately, no manual reload needed. If

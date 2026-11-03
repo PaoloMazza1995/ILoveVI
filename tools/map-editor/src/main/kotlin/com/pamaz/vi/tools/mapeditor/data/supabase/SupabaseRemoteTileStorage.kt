@@ -3,7 +3,9 @@ package com.pamaz.vi.tools.mapeditor.data.supabase
 import com.pamaz.vi.tools.mapeditor.data.RemoteTileStorage
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.storage.storage
+import io.ktor.client.request.header
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 
 internal const val MAP_TILES_BUCKET = "map-tiles"
 
@@ -17,6 +19,12 @@ class SupabaseRemoteTileStorage(client: SupabaseClient) : RemoteTileStorage {
         bucket.upload(path, bytes) {
             upsert = true
             this.contentType = contentType
+            // `UploadOptionBuilder` has no first-class `cacheControl` property (verified via
+            // javap against the real 3.1.4 jar, not assumed) — `httpOverride` is its documented
+            // escape hatch for exactly this. Each map version has its own folder and never
+            // changes in place (see `SupabaseAdminClient.uploadTiles`'s matching KDoc in
+            // `:tools:tilegen`), so a client never needs to revalidate a cached tile.
+            httpOverride { header(HttpHeaders.CacheControl, "max-age=31536000, immutable") }
         }
     }
 

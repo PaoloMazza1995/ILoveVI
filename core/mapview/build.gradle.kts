@@ -51,12 +51,39 @@ kotlin {
                 implementation(libs.compose.components.resources)
 
                 implementation(libs.coil.base)
+
+                // Raw Ktor for the tile pipeline's own HTTP fetch (Part 1) — same "no SDK, this
+                // module doesn't need one" house style as `:tools:tilegen`. Deliberately not a
+                // dependency on `:core:network` (which already wraps Ktor behind Supabase-specific
+                // plumbing): this module stays dependency-free of every network/database/feature
+                // module, per its own README, and a tile URL is a plain public HTTP GET with no
+                // auth/Postgrest concerns to share.
+                implementation(libs.ktor.client.core)
             }
+        }
+
+        androidMain.dependencies {
+            implementation(libs.ktor.client.okhttp)
+        }
+
+        jvmMain.dependencies {
+            implementation(libs.ktor.client.okhttp)
+        }
+
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
         }
 
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.ktor.client.mock)
+        }
+
+        jvmTest.dependencies {
+            implementation(libs.kotlin.testJunit)
+            implementation(compose.desktop.uiTestJUnit4)
+            implementation(compose.desktop.currentOs)
         }
     }
 }

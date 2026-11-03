@@ -17,6 +17,8 @@ data class TileGenRequest(
     val outputDir: Path,
     val tileSize: Int = 256,
     val backgroundColor: Int = TilePyramidGenerator.DEFAULT_BACKGROUND_COLOR,
+    /** See [TileFormat]'s KDoc — [TileFormat.WEBP] is the default; the extension this run's `tile_url_template` is registered with always matches. */
+    val format: TileFormat = TileFormat.WEBP,
     /** Explicit map version, or `null` to auto-derive it (see [TileGenPipeline.run]). */
     val mapVersion: Int? = null,
     val upload: Boolean = false,
@@ -68,6 +70,7 @@ object TileGenPipeline {
                 outputDir = request.outputDir,
                 mapVersion = mapVersion,
                 backgroundColor = request.backgroundColor,
+                format = request.format,
             )
 
             var mapConfig: MapConfig? = null
@@ -75,7 +78,12 @@ object TileGenPipeline {
             if (request.upload) {
                 val supabase = request.supabase!!
                 uploadedTileCount = SupabaseAdminClient.uploadTiles(
-                    httpClient, supabase, request.outputDir, mapVersion, request.dryRun,
+                    httpClient,
+                    supabase,
+                    request.outputDir,
+                    mapVersion,
+                    request.dryRun,
+                    request.format,
                 )
 
                 val sourceDescriptor = when (val source = request.source) {
@@ -83,7 +91,7 @@ object TileGenPipeline {
                     is TileSource.Local -> source.path.toString()
                 }
                 val tileUrlTemplate =
-                    "${supabase.baseUrl}/storage/v1/object/public/map-tiles/$mapVersion/{z}/{x}/{y}.png"
+                    "${supabase.baseUrl}/storage/v1/object/public/map-tiles/$mapVersion/{z}/{x}/{y}.${request.format.extension}"
 
                 val config = MapConfig(
                     mapVersion = mapVersion,

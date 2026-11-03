@@ -27,8 +27,6 @@ kotlin {
             implementation(libs.koin.compose.viewmodel)
 
             implementation(libs.kotlinx.coroutines.core)
-
-            implementation(libs.coil.base)
         }
 
         commonTest.dependencies {

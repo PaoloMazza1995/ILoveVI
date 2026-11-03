@@ -15,6 +15,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import com.pamaz.vi.core.mapview.tile.TileCacheConfig
+import com.pamaz.vi.core.mapview.tile.rememberTileEngine
 import com.pamaz.vi.core.model.MapConfig
 import com.pamaz.vi.core.model.NormalizedPoint
 import com.pamaz.vi.core.model.map.TileScheme
@@ -50,6 +52,27 @@ import kotlin.math.max
  * existing caller); see `backgroundDragSelectGestures`'s KDoc in `MapGestures.kt` for exactly how
  * it coexists with tap/pan/zoom and per-pin drag.
  */
+
+/**
+ * The subset of [MapContent] that actually affects geometry/zoom math — [MapContent.Tiles]'s
+ * `widthPx`/`heightPx`/`minZoom`/`maxZoom`, or [MapContent.SingleImage]'s `image` identity — used
+ * as a `remember`/[LaunchedEffect] key *instead of* the raw [MapContent] value so the rest of
+ * [MapConfig] (`updatedAt`, `tileUrlTemplate`, `sourceImageUrl`, `mapVersion`) changing doesn't
+ * get mistaken for "the map's geometry changed" — see the call sites in [MapViewer] for exactly
+ * what that mistake used to cause.
+ */
+private val MapContent.geometryKey: List<Any?>
+    get() = when (this) {
+        is MapContent.Tiles -> listOf(
+            config.widthPx,
+            config.heightPx,
+            config.minZoom,
+            config.maxZoom
+        )
+
+        is MapContent.SingleImage -> listOf(image)
+    }
+
 @Composable
 fun MapViewer(
     state: MapViewerState,
@@ -64,11 +87,25 @@ fun MapViewer(
     onBackgroundDragStart: (NormalizedPoint) -> Unit = {},
     onBackgroundDrag: (NormalizedPoint) -> Unit = {},
     onBackgroundDragEnd: () -> Unit = {},
+    /** Off by default; see [TileDebugOverlay]/[MapViewBuildConfig.debugOverlaySupported] — a release build never shows it regardless of this flag. */
+    debugOverlayEnabled: Boolean = false,
     pinContent: @Composable (pin: MapViewerPin, selected: Boolean) -> Unit = { pin, selected ->
         DefaultMapViewerPinContent(pin, selected)
     },
 ) {
-    val scheme = remember(content) {
+    // Only the fields that actually affect geometry/zoom math — *not* the full [content] object —
+    // so an unrelated [MapConfig] field changing (e.g. `updatedAt` bumping on a routine resync
+    // that touched no actually-visible data, `tileUrlTemplate` pointing at a different CDN for the
+    // same image) can't be mistaken for "the map itself changed". Before this, [MapContent.Tiles]
+    // being a `data class` wrapping the *whole* [MapConfig] meant exactly that: any such incidental
+    // field change made a structurally-different `content` on the next recomposition, which reset
+    // [hasAppliedInitialFitZoom] below and replayed the initial-fit `snapTo` — silently discarding
+    // whatever the user had actually panned/zoomed to. A real, reported bug ("dragging the map
+    // resets the zoom"): the reset wasn't caused by the drag itself, but a background resync
+    // landing while the user happened to be interacting with the map was far more likely to be
+    // *noticed* then than at any other time.
+    val geometryKey = content.geometryKey
+    val scheme = remember(geometryKey) {
         when (content) {
             is MapContent.Tiles -> TileScheme(content.config.widthPx, content.config.heightPx)
             is MapContent.SingleImage -> singleImageTileScheme(
@@ -77,6 +114,14 @@ fun MapViewer(
             )
         }
     }
+
+    // Hoisted out of the `LaunchedEffect` below (which only re-runs for layout/content reasons)
+    // so [TileLayer]'s own draw phase can use the exact same native-zoom bounds every frame,
+    // without recomputing them from [content] itself (reading [content] directly in a draw lambda
+    // would defeat the whole "don't recompose on every gesture frame" point of this function).
+    val nativeMinZoom = (content as? MapContent.Tiles)?.config?.minZoom ?: 0
+    val nativeMaxZoom =
+        (content as? MapContent.Tiles)?.let { minOf(it.config.maxZoom, scheme.maxZoom) } ?: 0
 
     val viewportSize = state.viewportSize
     // Both branches need a *viewport-dependent* minZoom, not just [content]'s own declared one:
@@ -91,8 +136,8 @@ fun MapViewer(
     // to always re-run because [viewportSize] only changes for genuine layout reasons (resize,
     // rotation, insets settling) — a user's own pan/pinch/zoom gestures only ever change [state]'s
     // `center`/`zoom`, never `viewportSize` itself, so this can never fight a manual zoom/pan.
-    var hasAppliedInitialFitZoom by remember(content) { mutableStateOf(false) }
-    LaunchedEffect(state, content, viewportSize) {
+    var hasAppliedInitialFitZoom by remember(geometryKey) { mutableStateOf(false) }
+    LaunchedEffect(state, geometryKey, viewportSize) {
         when (content) {
             is MapContent.Tiles -> {
                 // [MapConfig.maxZoom] is backend-declared metadata, not derived from [scheme]
@@ -104,7 +149,14 @@ fun MapViewer(
                 // request, repeated for every tile in view at that zoom. Clamping here means a
                 // misconfigured backend value can never do that, regardless of whether it also gets
                 // fixed at the source.
-                val maxZoom = minOf(content.config.maxZoom.toFloat(), scheme.maxZoom.toFloat())
+                //
+                // `maxZoom` here is the CAMERA ceiling, not the tile ceiling: it's the native
+                // (real-tile) max zoom plus [TileCacheConfig.OVERZOOM_LEVELS] — the user can zoom
+                // in that much further, with [TileLayer] simply enlarging the sharpest real tiles
+                // past that point (see its own KDoc). `nativeMaxZoom`/`nativeMinZoom` (the tile
+                // ceiling/floor) are computed separately, right below, and are what's actually
+                // passed to [TileLayer] for tile selection/fetching.
+                val maxZoom = nativeMaxZoom.toFloat() + TileCacheConfig.OVERZOOM_LEVELS
                 val coverFitZoom = coverFitZoom(
                     scheme, viewportSize.width.toFloat(), viewportSize.height.toFloat(),
                 )
@@ -116,7 +168,7 @@ fun MapViewer(
                 // is shown at its sharpest available resolution, slightly short of a perfect
                 // edge-to-edge cover in that rare case, rather than crashing.
                 val minZoom =
-                    max(content.config.minZoom.toFloat(), coverFitZoom).coerceAtMost(maxZoom)
+                    max(nativeMinZoom.toFloat(), coverFitZoom).coerceAtMost(maxZoom)
                 state.setZoomRange(minZoom, maxZoom)
                 if (!hasAppliedInitialFitZoom && viewportSize.width > 0 && viewportSize.height > 0) {
                     hasAppliedInitialFitZoom = true
@@ -184,12 +236,40 @@ fun MapViewer(
             .semantics { contentDescription = "Map. Drag to pan, pinch or double-tap to zoom." },
     ) {
         when (content) {
-            is MapContent.Tiles ->
+            is MapContent.Tiles -> {
+                val engine = rememberTileEngine(
+                    mapVersion = content.config.mapVersion,
+                    tileUrlTemplate = content.config.tileUrlTemplate,
+                    tileSizePx = scheme.tileSize,
+                )
+                // Preloads/pins the lowest zoom levels once per engine instance (new map version,
+                // or a tile address pointing somewhere else) — "the app already downloads the
+                // lowest levels at first launch for offline use" (task item 2's last bullet),
+                // reused here rather than `feature:map`'s now-removed `PrefetchLowestZoomTiles`.
+                LaunchedEffect(engine, scheme, nativeMinZoom, nativeMaxZoom) {
+                    engine.preloadPinnedLevels(
+                        scheme, nativeMinZoom, nativeMaxZoom,
+                        kotlin.time.Clock.System.now().toEpochMilliseconds(),
+                    )
+                }
                 TileLayer(
                     scheme = scheme,
-                    tileUrlTemplate = content.config.tileUrlTemplate,
-                    state = state
+                    mapVersion = content.config.mapVersion,
+                    nativeMinZoom = nativeMinZoom,
+                    nativeMaxZoom = nativeMaxZoom,
+                    state = state,
+                    engine = engine,
                 )
+                if (debugOverlayEnabled) {
+                    TileDebugOverlay(
+                        scheme = scheme,
+                        state = state,
+                        engine = engine,
+                        nativeMinZoom = nativeMinZoom,
+                        nativeMaxZoom = nativeMaxZoom,
+                    )
+                }
+            }
 
             is MapContent.SingleImage ->
                 SingleImageLayer(image = content.image, scheme = scheme, state = state)
@@ -224,6 +304,8 @@ fun MapViewer(
     onBackgroundDragStart: (NormalizedPoint) -> Unit = {},
     onBackgroundDrag: (NormalizedPoint) -> Unit = {},
     onBackgroundDragEnd: () -> Unit = {},
+    /** Forwarded to the [items]-based overload above — see [MapViewBuildConfig.debugOverlaySupported]. `:tools:map-editor`'s `MapArea.kt` is the one real caller (a hidden shortcut); `:feature:map` never sets this. */
+    debugOverlayEnabled: Boolean = false,
     pinContent: @Composable (pin: MapViewerPin, selected: Boolean) -> Unit = { pin, selected ->
         DefaultMapViewerPinContent(pin, selected)
     },
@@ -239,6 +321,7 @@ fun MapViewer(
     onBackgroundDragStart = onBackgroundDragStart,
     onBackgroundDrag = onBackgroundDrag,
     onBackgroundDragEnd = onBackgroundDragEnd,
+    debugOverlayEnabled = debugOverlayEnabled,
     pinContent = pinContent,
 )
 

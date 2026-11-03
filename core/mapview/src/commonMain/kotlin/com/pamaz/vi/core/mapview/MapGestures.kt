@@ -17,6 +17,7 @@ import com.pamaz.vi.core.model.map.MapViewport
 import com.pamaz.vi.core.model.map.ScreenPoint
 import com.pamaz.vi.core.model.map.TileScheme
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlin.math.log2
 
@@ -26,12 +27,41 @@ private const val SCROLL_ZOOM_PER_NOTCH = 0.5f
 /** Zoom levels a double-tap adds, focused on the tapped point. */
 private const val DOUBLE_TAP_ZOOM_STEP = 1f
 
+/** One pending camera update produced by a touch-move event — see [panZoomFlingGestures]'s KDoc. */
+private data class PendingCameraSnap(
+    val center: NormalizedPoint,
+    val zoom: Float,
+    val boundsX: ClosedFloatingPointRange<Float>,
+    val boundsY: ClosedFloatingPointRange<Float>,
+)
+
 /**
  * Pan, pinch-zoom and fling: one combined gesture detector (rather than the stock
  * `detectTransformGestures`) so a [VelocityTracker] can be fed real pointer timestamps for the
  * fling at gesture end — `detectTransformGestures` doesn't expose those itself. Live tracking
  * uses [MapViewerState.snapTo] (1:1 with the finger); release hands off to
  * [MapViewerState.flingBy].
+ *
+ * A touch-move event stream can report updates faster than the display can actually show new
+ * frames. The previous implementation called `coroutineScope.launch { state.snapTo(...) }` for
+ * *every single event*, each one a brand-new child coroutine (and, before a matching fix in
+ * [MapViewerState.snapTo] itself, three more nested ones inside that) — real, measured overhead
+ * paid on a genuinely hot path, a concrete source of the "panning feels slow" reports against this
+ * screen. [pendingSnaps] replaces that with exactly one consumer coroutine per *gesture*, fed
+ * through a `CONFLATED` channel: `trySend` never suspends and always keeps only the latest value,
+ * so the consumer applies camera updates as fast as it can actually keep up, automatically
+ * coalescing/dropping intermediate values once the producer (touch events) outpaces it (frame
+ * rendering) — exactly the "camera position per frame", not "camera position per raw touch
+ * sample", this really needs. [pendingSnaps] is closed (not cancelled) once the gesture ends, so
+ * its consumer coroutine finishes applying whatever's left in the channel and exits on its own
+ * rather than being torn down mid-update — `cancel()` could leave [state] one update behind right
+ * as the fling animation takes over from it. The consumer isn't explicitly awaited before
+ * computing the fling below (`Job.join()` isn't callable here — `awaitEachGesture`'s scope is
+ * `@RestrictsSuspension`, same reason [state]'s own suspend functions need `launch` too): the fling
+ * itself is computed from this function's local `center`/`zoom`/`velocityTracker`, never from
+ * [state] directly, so the very last queued snap finishing a frame late is, at most, an
+ * imperceptible single-frame lag on [state]'s own externally-observed position, not a correctness
+ * issue for the fling calculation itself.
  */
 private fun Modifier.panZoomFlingGestures(
     state: MapViewerState,
@@ -46,6 +76,24 @@ private fun Modifier.panZoomFlingGestures(
         var center = state.center
         var zoom = state.zoom
 
+        val pendingSnaps = Channel<PendingCameraSnap>(capacity = Channel.CONFLATED)
+        coroutineScope.launch {
+            for (snap in pendingSnaps) {
+                state.snapTo(snap.center, snap.zoom, snap.boundsX, snap.boundsY)
+            }
+        }
+        // True only once real pan/pinch movement is actually detected below — a plain tap (and
+        // the first, or only, tap of a double-tap: this detector sees it too, since it runs
+        // alongside `tapGestures`, see `mapViewerGestures`'s KDoc on why) never sets this. Gates
+        // the end-of-gesture fling further down: launching a `state.flingBy(...)` with essentially
+        // zero velocity for a gesture that never moved is both pointless and a real race —
+        // `tapGestures`'s `onDoubleTap` can be mutating this same `state` (zooming in) at roughly
+        // the same moment the second tap's "gesture" here is wrapping up, and a reported bug
+        // ("double-tapping the map resets the zoom") is consistent with exactly that race. A tap
+        // that never moved has nothing to fling in the first place, so skipping it outright
+        // removes the race rather than trying to win it.
+        var hasMoved = false
+
         do {
             val event = awaitPointerEvent()
             if (event.changes.any { it.isConsumed }) break
@@ -53,6 +101,7 @@ private fun Modifier.panZoomFlingGestures(
             val zoomChange = event.calculateZoom()
             val panChange = event.calculatePan()
             if (zoomChange != 1f || panChange != Offset.Zero) {
+                hasMoved = true
                 val viewportWidth = state.viewportSize.width.toFloat()
                 val viewportHeight = state.viewportSize.height.toFloat()
 
@@ -90,24 +139,30 @@ private fun Modifier.panZoomFlingGestures(
                     centerBoundsForAxis((scheme.widthPx * liveScale).toFloat(), viewportWidth)
                 val boundsY =
                     centerBoundsForAxis((scheme.heightPx * liveScale).toFloat(), viewportHeight)
-                coroutineScope.launch { state.snapTo(liveCenter, liveZoom, boundsX, boundsY) }
+                pendingSnaps.trySend(PendingCameraSnap(liveCenter, liveZoom, boundsX, boundsY))
                 event.changes.forEach { it.consume() }
                 val change = event.changes.first()
                 velocityTracker.addPosition(change.uptimeMillis, change.position)
             }
         } while (event.changes.any { it.pressed })
 
-        val velocity = velocityTracker.calculateVelocity()
-        val scale = scheme.scaleAt(zoom)
-        val scaledWidth = (scheme.widthPx * scale).toFloat()
-        val scaledHeight = (scheme.heightPx * scale).toFloat()
-        val flingVelocityX = -velocity.x / scaledWidth
-        val flingVelocityY = -velocity.y / scaledHeight
-        val viewportWidth = state.viewportSize.width.toFloat()
-        val viewportHeight = state.viewportSize.height.toFloat()
-        val boundsX = centerBoundsForAxis(scaledWidth, viewportWidth)
-        val boundsY = centerBoundsForAxis(scaledHeight, viewportHeight)
-        coroutineScope.launch { state.flingBy(flingVelocityX, flingVelocityY, boundsX, boundsY) }
+        pendingSnaps.close()
+
+        if (hasMoved) {
+            val velocity = velocityTracker.calculateVelocity()
+            val scale = scheme.scaleAt(zoom)
+            val scaledWidth = (scheme.widthPx * scale).toFloat()
+            val scaledHeight = (scheme.heightPx * scale).toFloat()
+            val flingVelocityX = -velocity.x / scaledWidth
+            val flingVelocityY = -velocity.y / scaledHeight
+            val viewportWidth = state.viewportSize.width.toFloat()
+            val viewportHeight = state.viewportSize.height.toFloat()
+            val boundsX = centerBoundsForAxis(scaledWidth, viewportWidth)
+            val boundsY = centerBoundsForAxis(scaledHeight, viewportHeight)
+            coroutineScope.launch {
+                state.flingBy(flingVelocityX, flingVelocityY, boundsX, boundsY)
+            }
+        }
     }
 }
 

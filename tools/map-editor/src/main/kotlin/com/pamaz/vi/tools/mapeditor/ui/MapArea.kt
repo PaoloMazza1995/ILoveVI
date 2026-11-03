@@ -34,6 +34,7 @@ import com.pamaz.vi.core.mapview.MapContent
 import com.pamaz.vi.core.mapview.MapViewer
 import com.pamaz.vi.core.mapview.MapViewerPin
 import com.pamaz.vi.core.mapview.rememberMapViewerState
+import com.pamaz.vi.core.mapview.rememberTileBenchmarkTrigger
 import com.pamaz.vi.core.mapview.singleImageTileScheme
 import com.pamaz.vi.core.model.NormalizedPoint
 import com.pamaz.vi.core.model.map.MapViewport
@@ -160,6 +161,19 @@ private fun MapCanvas(
     var marqueeCurrent by remember { mutableStateOf<NormalizedPoint?>(null) }
     val focusRequester = remember { FocusRequester() }
 
+    // Task item 5's "hidden shortcut in the editor" for `:core:mapview`'s TileDebugOverlay — off
+    // by default, no visible button/menu entry (this is a debug tool, not a product feature).
+    // `MapViewBuildConfig.debugOverlaySupported` already makes the overlay itself absent from a
+    // release build of the app regardless of this flag; this tool has no release/debug build
+    // distinction of its own (it's a desktop dev tool only), so the shortcut always exists here.
+    var debugOverlayEnabled by remember { mutableStateOf(false) }
+
+    // Task item 6/TESTS section's "scripted benchmark in the editor (debug only)" — a second
+    // hidden shortcut, same no-visible-affordance convention as the debug overlay above. Only
+    // meaningful for a real tile map (MapContent.Tiles); printed to stdout since this tool has no
+    // dedicated results panel for it (see the module README).
+    val runBenchmark = rememberTileBenchmarkTrigger(onResult = ::println)
+
     val draftItems = uiState.draftPins.map {
         MapViewerPin(
             id = it.id,
@@ -201,6 +215,31 @@ private fun MapCanvas(
                     Key.ShiftLeft, Key.ShiftRight -> {
                         shiftHeld = event.type == KeyEventType.KeyDown
                         false
+                    }
+
+                    Key.D -> {
+                        if (event.type == KeyEventType.KeyDown && event.isCtrlPressed && event.isShiftPressed) {
+                            debugOverlayEnabled = !debugOverlayEnabled; true
+                        } else {
+                            false
+                        }
+                    }
+
+                    Key.B -> {
+                        val tilesConfig = (content as? MapContent.Tiles)?.config
+                        if (event.type == KeyEventType.KeyDown && event.isCtrlPressed && event.isShiftPressed &&
+                            tilesConfig != null
+                        ) {
+                            val viewportSize = mapViewerState.viewportSize
+                            runBenchmark(
+                                tilesConfig,
+                                viewportSize.width.toFloat(),
+                                viewportSize.height.toFloat()
+                            )
+                            true
+                        } else {
+                            false
+                        }
                     }
 
                     Key.Delete, Key.Backspace -> {
@@ -250,6 +289,7 @@ private fun MapCanvas(
                 }
             },
             modifier = Modifier.fillMaxSize(),
+            debugOverlayEnabled = debugOverlayEnabled,
             backgroundDragSelectEnabled = uiState.mode == EditMode.SELECT,
             onBackgroundDragStart = { point -> marqueeStart = point; marqueeCurrent = point },
             onBackgroundDrag = { point -> marqueeCurrent = point },

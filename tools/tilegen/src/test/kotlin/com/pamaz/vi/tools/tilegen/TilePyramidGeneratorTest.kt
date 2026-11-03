@@ -30,10 +30,11 @@ class TilePyramidGeneratorTest {
         mapVersion: Int,
         zoom: Int,
         tileX: Int,
-        tileY: Int
+        tileY: Int,
+        format: TileFormat = TileFormat.WEBP,
     ) =
         outDir.resolve(mapVersion.toString()).resolve(zoom.toString()).resolve(tileX.toString())
-            .resolve("$tileY.png").toFile()
+            .resolve("$tileY.${format.extension}").toFile()
 
     @Test
     fun tileCountsAndDimensions_1000x700() = runBlocking {
@@ -54,6 +55,7 @@ class TilePyramidGeneratorTest {
                 expectedTotal += tilesWide * tilesHigh
                 for (tileY in 0 until tilesHigh) {
                     for (tileX in 0 until tilesWide) {
+                        // Default format (WebP) — see the explicit-PNG test below for pixel-fidelity.
                         val file = tileFile(outDir, 1, zoom, tileX, tileY)
                         assertTrue(file.exists(), "expected tile $zoom/$tileX/$tileY to exist")
                         val tileImage = ImageIO.read(file)
@@ -78,7 +80,13 @@ class TilePyramidGeneratorTest {
 
             val outDir = tempDir.resolve("out")
             val scheme = TileScheme(1000, 700)
-            TilePyramidGenerator.generate(sourceFile.toPath(), scheme, outDir, mapVersion = 1)
+            // PNG (lossless) explicitly: this test asserts the *tiling/stitching math* reproduces
+            // the source exactly, independent of lossy compression artifacts — WebP's own quality
+            // is a separate, deliberate trade-off (see TileFormat's KDoc), not a bug to tolerate
+            // here.
+            TilePyramidGenerator.generate(
+                sourceFile.toPath(), scheme, outDir, mapVersion = 1, format = TileFormat.PNG,
+            )
 
             val zoom = scheme.maxZoom
             val tilesWide = scheme.tilesWide(zoom)
@@ -91,7 +99,8 @@ class TilePyramidGeneratorTest {
             val g = stitched.createGraphics()
             for (tileY in 0 until tilesHigh) {
                 for (tileX in 0 until tilesWide) {
-                    val tileImage = ImageIO.read(tileFile(outDir, 1, zoom, tileX, tileY))
+                    val tileImage =
+                        ImageIO.read(tileFile(outDir, 1, zoom, tileX, tileY, TileFormat.PNG))
                     g.drawImage(tileImage, tileX * scheme.tileSize, tileY * scheme.tileSize, null)
                 }
             }
@@ -109,6 +118,78 @@ class TilePyramidGeneratorTest {
                 maxDiff <= 2,
                 "expected stitched image to match the original within tolerance, max diff was $maxDiff"
             )
+        } finally {
+            tempDir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * Exercises the real `webp-imageio` native library end to end (encode via
+     * [TilePyramidGenerator.generate]'s [TileFormat.WEBP] default, decode back via plain
+     * [ImageIO.read] — the exact round-trip a client decoding a downloaded tile does), not just
+     * that the Kotlin code compiles against its API. Lossy, so this allows a looser tolerance than
+     * the PNG stitching test above — the point here is "a real, valid, reasonably-faithful WebP
+     * tile came out the other end", not pixel-exactness.
+     */
+    @Test
+    fun generate_webpDefault_roundTripsThroughRealCodec() = runBlocking {
+        val tempDir = createTempDirectory("tilegen-webp-test-")
+        try {
+            val sourceFile = tempDir.resolve("source.png").toFile()
+            // A smooth gradient, not `syntheticImage`'s sawtooth blue channel — a lossy
+            // block-based codec's worst-case error is dominated by hard per-pixel discontinuities,
+            // which isn't what this test cares about measuring; a real map image is photographic/
+            // smooth, not adversarial noise.
+            val original = BufferedImage(256, 256, BufferedImage.TYPE_INT_RGB)
+            for (y in 0 until 256) {
+                for (x in 0 until 256) {
+                    original.setRGB(x, y, (x shl 16) or (y shl 8) or ((x + y) / 2))
+                }
+            }
+            ImageIO.write(original, "png", sourceFile)
+
+            val outDir = tempDir.resolve("out")
+            val scheme = TileScheme(256, 256)
+            TilePyramidGenerator.generate(sourceFile.toPath(), scheme, outDir, mapVersion = 1)
+
+            val file = tileFile(outDir, 1, scheme.maxZoom, 0, 0)
+            assertTrue(file.exists() && file.extension == "webp")
+            val decoded = ImageIO.read(file)
+            assertEquals(256, decoded.width)
+            assertEquals(256, decoded.height)
+
+            var totalDiff = 0L
+            for (y in 0 until 256) {
+                for (x in 0 until 256) {
+                    totalDiff += componentwiseMaxDiff(original.getRGB(x, y), decoded.getRGB(x, y))
+                }
+            }
+            val averageDiff = totalDiff.toDouble() / (256 * 256)
+            assertTrue(
+                averageDiff <= 10.0,
+                "expected a visually close lossy round-trip, average per-pixel diff was $averageDiff",
+            )
+        } finally {
+            tempDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun sampleTileByteSizes_returnsRealEncodedSizesWithoutWritingAnything() = runBlocking {
+        val tempDir = createTempDirectory("tilegen-sample-test-")
+        try {
+            val sourceFile = tempDir.resolve("source.png").toFile()
+            ImageIO.write(syntheticImage(1024, 1024), "png", sourceFile)
+            val scheme = TileScheme(1024, 1024)
+
+            val sizes = TilePyramidGenerator.sampleTileByteSizes(sourceFile.toPath(), scheme)
+
+            assertTrue(sizes.isNotEmpty())
+            assertTrue(
+                sizes.all { it > 0 },
+                "expected every sampled tile to have a positive encoded size, got $sizes"
+            )
+            assertTrue(tempDir.resolve("out").toFile().listFiles().isNullOrEmpty())
         } finally {
             tempDir.toFile().deleteRecursively()
         }

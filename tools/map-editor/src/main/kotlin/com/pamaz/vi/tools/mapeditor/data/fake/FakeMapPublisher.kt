@@ -11,6 +11,7 @@ import com.pamaz.vi.tools.mapeditor.model.MapPublishPlanResult
 import com.pamaz.vi.tools.mapeditor.model.MapPublishStep
 import com.pamaz.vi.tools.mapeditor.model.MapPublishStepState
 import com.pamaz.vi.tools.mapeditor.model.MapPublishStepStatus
+import com.pamaz.vi.tools.tilegen.TileFormat
 import com.pamaz.vi.tools.tilegen.TilePyramidGenerator
 import com.pamaz.vi.tools.tilegen.readImageDimensions
 import kotlinx.coroutines.Dispatchers
@@ -51,13 +52,22 @@ class FakeMapPublisher(
             pinRepository.loadAll()
         )
         val tileUrlTemplate =
-            "https://example.com/fake-tiles/v${decision.mapVersion}/{z}/{x}/{y}.png"
+            "https://example.com/fake-tiles/v${decision.mapVersion}/{z}/{x}/{y}.${TileFormat.WEBP.extension}"
+        // Real sample tiles from the real file (task item 7b: a storage estimate shown *before*
+        // any full generation starts) — the fake backend reuses this exact logic too, since the
+        // whole point of testing against it first is that it computes the same plan a real
+        // project would for the same image.
+        val estimatedStorageBytes = withContext(Dispatchers.IO) {
+            MapPublishPlanning.estimateStorageBytes(file, dimensions, TileFormat.WEBP)
+        }
         return MapPublishPlanResult.Valid(
             MapPublishPlanning.buildPlan(
                 file,
                 dimensions,
                 tileUrlTemplate,
-                decision
+                decision,
+                TileFormat.WEBP,
+                estimatedStorageBytes,
             )
         )
     }
@@ -110,7 +120,8 @@ class FakeMapPublisher(
                 plan.sourceImage.toPath(),
                 scheme,
                 tempDir,
-                plan.mapVersion
+                plan.mapVersion,
+                format = plan.format,
             )
             updateStep(
                 MapPublishStep.GENERATE,

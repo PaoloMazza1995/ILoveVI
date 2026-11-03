@@ -140,6 +140,61 @@ class MapPublishPlanningTest {
         assertEquals(1 + 4 + 16 + 64 + 256, plan.tileCount)
     }
 
+    /**
+     * Task item 7's own example numbers — 341/1365/5461/21845 tiles for 4096/8192/16384/32768px —
+     * are each the geometric series `1 + 4 + 16 + ... + 4^maxZoom` across every pyramid level, not
+     * just the base one; [buildPlan_4096Image_reachesZoom4With256Tiles] above only ever asserted
+     * the base level's own 256, not the cumulative total [MapPublishPlan.tileCount] actually is.
+     * This covers the exact four sizes task item 7a names, plus the native-zoom-from-size formula
+     * (`2^z * 256 >= the long side`: 4096->4, 8192->5, 16384->6, 32768->7) each one implies.
+     */
+    @Test
+    fun buildPlan_8192Image_reachesZoom5With1365Tiles() {
+        val plan = MapPublishPlanning.buildPlan(
+            file = File("map.png"),
+            dimensions = ImageDimensions(8192, 8192),
+            tileUrlTemplate = "https://example.com/{z}/{x}/{y}.png",
+            decision = MapPublishPlanning.VersionDecision(1, MapVersionAction.NEW_VERSION, 0),
+        )
+        assertEquals(5, plan.maxZoom)
+        assertEquals(1 + 4 + 16 + 64 + 256 + 1024, plan.tileCount)
+        assertEquals(1365, plan.tileCount)
+    }
+
+    @Test
+    fun buildPlan_16384Image_reachesZoom6With5461Tiles() {
+        val plan = MapPublishPlanning.buildPlan(
+            file = File("map.png"),
+            dimensions = ImageDimensions(16384, 16384),
+            tileUrlTemplate = "https://example.com/{z}/{x}/{y}.png",
+            decision = MapPublishPlanning.VersionDecision(1, MapVersionAction.NEW_VERSION, 0),
+        )
+        assertEquals(6, plan.maxZoom)
+        assertEquals(5461, plan.tileCount)
+    }
+
+    @Test
+    fun buildPlan_32768Image_reachesZoom7With21845Tiles() {
+        val plan = MapPublishPlanning.buildPlan(
+            file = File("map.png"),
+            dimensions = ImageDimensions(32768, 32768),
+            tileUrlTemplate = "https://example.com/{z}/{x}/{y}.png",
+            decision = MapPublishPlanning.VersionDecision(1, MapVersionAction.NEW_VERSION, 0),
+        )
+        assertEquals(7, plan.maxZoom)
+        assertEquals(21845, plan.tileCount)
+    }
+
+    @Test
+    fun validateDimensions_accepts32768_theRaisedMaxDimension() {
+        assertEquals(null, MapPublishPlanning.validateDimensions(ImageDimensions(32768, 32768)))
+    }
+
+    @Test
+    fun validateDimensions_rejectsOver32768() {
+        assertTrue(MapPublishPlanning.validateDimensions(ImageDimensions(32769, 100)) != null)
+    }
+
     @Test
     fun buildPlan_256Image_isASingleTileAtZoom0() {
         val plan = MapPublishPlanning.buildPlan(

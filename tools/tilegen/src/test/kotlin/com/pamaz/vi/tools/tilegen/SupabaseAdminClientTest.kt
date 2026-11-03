@@ -150,6 +150,37 @@ class SupabaseAdminClientTest {
     }
 
     @Test
+    fun uploadTiles_setsLongCacheControlAndFormatContentType() = runBlocking {
+        val tempDir = createTempDirectory("tilegen-upload-test-")
+        try {
+            val tileDir = tempDir.resolve("3").resolve("0").resolve("0")
+            Files.createDirectories(tileDir)
+            tileDir.resolve("0.webp").writeBytes(byteArrayOf(1, 2, 3))
+
+            val requests = mutableListOf<HttpRequestData>()
+            val engine = MockEngine { request ->
+                requests.add(request)
+                respond(content = "", status = HttpStatusCode.OK)
+            }
+            val client = HttpClient(engine)
+
+            SupabaseAdminClient.uploadTiles(
+                client, config, tempDir, mapVersion = 3, dryRun = false, format = TileFormat.WEBP,
+            )
+
+            val request = requests.single()
+            assertEquals("max-age=31536000, immutable", request.headers[HttpHeaders.CacheControl])
+            // Ktor exposes a request's Content-Type via its OutgoingContent, not as a plain
+            // `headers[...]` entry (verified here, not assumed) — `contentType { }` on the request
+            // builder sets `body.contentType`, which never gets copied into `HttpRequestData
+            // .headers` itself.
+            assertEquals("image/webp", request.body.contentType.toString())
+        } finally {
+            tempDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun uploadTiles_dryRun_countsFilesWithoutSendingRequests() = runBlocking {
         val tempDir = createTempDirectory("tilegen-upload-test-")
         try {

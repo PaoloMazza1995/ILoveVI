@@ -62,6 +62,7 @@ import com.pamaz.vi.design.components.IloveViMapControls
 import com.pamaz.vi.design.components.IloveViSearchField
 import com.pamaz.vi.design.components.icon
 import com.pamaz.vi.design.components.toIloveViCategory
+import com.pamaz.vi.feature.map.cluster.CLUSTER_DISTANCE_PX
 import com.pamaz.vi.feature.map.cluster.ClusterablePin
 import com.pamaz.vi.feature.map.cluster.PinClusterer
 import ilovevi.feature.map.generated.resources.Res
@@ -89,6 +90,9 @@ private val ClusterZoomPaddingDp = 32.dp
 
 /** The selected-pin bottom sheet's collapsed ("peek") height: just enough for the compact card + "View details" — dragging it up past this reveals the entry's description underneath. */
 private val SheetPeekHeight = 220.dp
+
+/** How far the camera has to pan, in screen pixels, before re-clustering is worth doing again — see the `remember` key comment in [MapLoadedContent] for why. Half [CLUSTER_DISTANCE_PX]: finer movement than that can't change which pins [PinClusterer] groups together. */
+private const val ClusterRecomputeThresholdPx = CLUSTER_DISTANCE_PX / 2f
 
 /**
  * The Map tab (MAP-01..11, MST-04..07). [selectedEntryId] matches step 8's navigation contract:
@@ -350,14 +354,21 @@ private fun MapLoadedContent(
     // its KDoc) widens them to the real, viewport-aware range — but a 0f/0f window, how ever brief,
     // is exactly the state `animateTo`/`setZoomRange` calls made during it would clamp into.
     //
-    // Wrapped in `key(state.mapConfig)`: on a cold app start, the locally-bundled seed map config
-    // (a small 1024x1024 placeholder) is available immediately, before `ContentSyncer` has had a
-    // chance to replace it with the real synced one — so `MapUiState.Loaded` (and this composable)
-    // can genuinely run *twice* with two different `MapConfig`s in quick succession. Without `key`,
-    // `rememberMapViewerState`'s own un-keyed `remember { }` would keep the *first* `MapViewerState`
-    // instance (and its seed-config-derived `minZoom`/`maxZoom` bounds) alive even after the real
-    // config arrives. `key()` forces a brand new `MapViewerState` (fresh, correct bounds) whenever
-    // the config actually changes.
+    // Wrapped in `key(...)`, but on only widthPx/heightPx/minZoom/maxZoom — *not* the whole
+    // `state.mapConfig` object (an earlier version of this fix used `key(state.mapConfig)`
+    // directly, which turned out to cause a real, reported bug: "dragging the map resets the
+    // zoom". `MapConfig` carries fields that can legitimately change on an ordinary resync without
+    // the map itself changing at all (`updatedAt`, `tileUrlTemplate`, `mapVersion`, ...); keying on
+    // the whole object meant any one of those discarded this *entire* `MapViewerState` — center,
+    // zoom, everything the user had just panned/zoomed to — and rebuilt a fresh one from scratch.
+    // The narrower key here only reconstructs the camera when the geometry it was actually built
+    // for has changed) — on a cold app start, the locally-bundled seed map config (a small
+    // 1024x1024 placeholder) is available immediately, before `ContentSyncer` has had a chance to
+    // replace it with the real synced one, so `MapUiState.Loaded` (and this composable) can
+    // genuinely run *twice* with two different, differently-*sized* `MapConfig`s in quick
+    // succession — that specific transition still needs a fresh `MapViewerState` (its old
+    // minZoom/maxZoom bounds, sized for the seed's small placeholder image, are wrong for the real
+    // one), which this key still catches.
     //
     // The initial "fit the viewport" zoom and the "can't zoom out past the map's own edges" floor
     // both live in `:core:mapview`'s `MapViewer` itself now (see its KDoc on exactly why, and the
@@ -365,19 +376,29 @@ private fun MapLoadedContent(
     // already had; this screen doesn't need its own copy of that logic for `MapContent.Tiles` mode
     // anymore, and an earlier, now-removed duplicate here raced against `MapViewer`'s own version
     // of the same correction.
-    val cameraState = key(state.mapConfig) {
+    val cameraState = key(
+        state.mapConfig.widthPx,
+        state.mapConfig.heightPx,
+        state.mapConfig.minZoom,
+        state.mapConfig.maxZoom,
+    ) {
         rememberMapViewerState(
             minZoom = state.mapConfig.minZoom.toFloat(),
             maxZoom = state.mapConfig.maxZoom.toFloat(),
         )
     }
-    val scheme =
-        remember(state.mapConfig) { TileScheme(state.mapConfig.widthPx, state.mapConfig.heightPx) }
+    val scheme = remember(state.mapConfig.widthPx, state.mapConfig.heightPx) {
+        TileScheme(state.mapConfig.widthPx, state.mapConfig.heightPx)
+    }
     val clusterer = remember { PinClusterer() }
     val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
 
-    PrefetchLowestZoomTiles(mapConfig = state.mapConfig, scheme = scheme)
+    // Lowest-zoom-levels prefetch ("never blank, even offline from first launch") now lives
+    // inside `:core:mapview`'s own `MapViewer`/`TileEngine` (pinned cache levels, loaded once per
+    // map version) — this screen no longer needs its own copy; see that module's README "Tile
+    // pipeline" section. `TilePrefetch.kt`'s old Coil3-`SingletonImageLoader`-based version is
+    // removed entirely, per this step's "no local tile loading/caching code in feature:map" rule.
 
     // Re-clustering is real work (a full grid-bucket + union-find pass — see `PinClusterer`'s own
     // KDoc); keying `remember` on the camera's *exact* zoom/center re-triggers it on literally
@@ -388,9 +409,21 @@ private fun MapLoadedContent(
     // the camera has moved far enough to plausibly change any grouping — pin *positions* never lag
     // behind the real camera either way, since `MapViewer`'s own `PinLayer` always places them from
     // the live camera state directly, independent of when this list was last recomputed.
+    //
+    // The rounding grid is expressed in *screen pixels* (via the current zoom's scale), not raw
+    // normalized-coordinate units: a fixed normalized threshold means a fixed fraction of the
+    // *whole map*, which is a wildly different number of screen pixels depending on zoom — at low
+    // zoom (zoomed out, usually when the *most* pins and the *most* clustering work are in play)
+    // a fixed-normalized threshold is tiny in screen terms and barely throttles anything; at high
+    // zoom it's needlessly huge. Tying it to actual on-screen movement keeps the throttle doing
+    // the same job at every zoom level. `CLUSTER_DISTANCE_PX / 2` is the threshold: finer than
+    // that, a pan genuinely can't have changed any grouping decision `PinClusterer` would make.
+    val currentScale = scheme.scaleAt(cameraState.zoom)
+    val panThresholdX = (ClusterRecomputeThresholdPx / (scheme.widthPx * currentScale)).toFloat()
+    val panThresholdY = (ClusterRecomputeThresholdPx / (scheme.heightPx * currentScale)).toFloat()
     val clusterZoomKey = (cameraState.zoom * 5f).roundToInt()
-    val clusterCenterXKey = (cameraState.center.x * 200f).roundToInt()
-    val clusterCenterYKey = (cameraState.center.y * 200f).roundToInt()
+    val clusterCenterXKey = (cameraState.center.x / panThresholdX).roundToInt()
+    val clusterCenterYKey = (cameraState.center.y / panThresholdY).roundToInt()
     val items = remember(
         state.pins,
         state.selectedPinId,

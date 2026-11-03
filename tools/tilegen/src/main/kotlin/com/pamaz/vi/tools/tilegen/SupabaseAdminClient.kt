@@ -83,6 +83,12 @@ object SupabaseAdminClient {
      * overwriting any existing object at the same path (`x-upsert`) so re-running tilegen for the
      * same map version is idempotent. Returns the number of tiles uploaded (or that would be, when
      * [dryRun]).
+     *
+     * `Cache-Control: max-age=31536000, immutable` on every object: each map version has its own
+     * folder (`<mapVersion>/...`) and a version's tiles, once generated, never change in place —
+     * re-running tilegen for the *same* version only happens to retry a failed upload, never to
+     * publish different pixels under the same URL — so a client (or CDN in front of Storage) never
+     * needs to revalidate a cached tile.
      */
     suspend fun uploadTiles(
         httpClient: HttpClient,
@@ -90,11 +96,13 @@ object SupabaseAdminClient {
         outputDir: Path,
         mapVersion: Int,
         dryRun: Boolean,
+        format: TileFormat = TileFormat.WEBP,
     ): Int {
         val versionDir = outputDir.resolve(mapVersion.toString())
         val tileFiles = Files.walk(versionDir).use { stream ->
             stream.filter { Files.isRegularFile(it) }.toList()
         }
+        val tileContentType = tileContentType(format)
 
         if (!dryRun) {
             for (file in tileFiles) {
@@ -106,7 +114,8 @@ object SupabaseAdminClient {
                         header("apikey", config.serviceRoleKey)
                         header(HttpHeaders.Authorization, "Bearer ${config.serviceRoleKey}")
                         header("x-upsert", "true")
-                        contentType(ContentType.Image.PNG)
+                        header(HttpHeaders.CacheControl, "max-age=31536000, immutable")
+                        contentType(tileContentType)
                         setBody(file.readBytes())
                     }
                 require(response.status.isSuccess()) {
@@ -154,4 +163,9 @@ object SupabaseAdminClient {
         }
         return mapConfig
     }
+}
+
+internal fun tileContentType(format: TileFormat): ContentType = when (format) {
+    TileFormat.WEBP -> ContentType.Image.WEBP
+    TileFormat.PNG -> ContentType.Image.PNG
 }

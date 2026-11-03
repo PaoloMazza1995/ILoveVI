@@ -16,6 +16,7 @@ import com.pamaz.vi.tools.mapeditor.model.MapPublishStep
 import com.pamaz.vi.tools.mapeditor.model.MapPublishStepState
 import com.pamaz.vi.tools.mapeditor.model.MapPublishStepStatus
 import com.pamaz.vi.tools.mapeditor.model.MapVersionAction
+import com.pamaz.vi.tools.tilegen.TileFormat
 import com.pamaz.vi.tools.tilegen.TilePyramidGenerator
 import com.pamaz.vi.tools.tilegen.readImageDimensions
 import io.ktor.client.HttpClient
@@ -93,13 +94,20 @@ class SupabaseMapPublisher(
             currentConfig.mapVersionOrNull,
             pinRepository.loadAll()
         )
-        val tileUrlTemplate = tileUrlTemplate(baseUrl, decision.mapVersion)
+        val tileUrlTemplate = tileUrlTemplate(baseUrl, decision.mapVersion, DEFAULT_TILE_FORMAT)
+        // Real sample tiles from the real file, before any full tiling/upload starts — task item
+        // 7b's "estimate of the storage size from the size of a few sample tiles".
+        val estimatedStorageBytes = withContext(Dispatchers.IO) {
+            MapPublishPlanning.estimateStorageBytes(file, dimensions, DEFAULT_TILE_FORMAT)
+        }
         return MapPublishPlanResult.Valid(
             MapPublishPlanning.buildPlan(
                 file,
                 dimensions,
                 tileUrlTemplate,
-                decision
+                decision,
+                DEFAULT_TILE_FORMAT,
+                estimatedStorageBytes,
             )
         )
     }
@@ -230,7 +238,9 @@ class SupabaseMapPublisher(
             createTempDirectory("ilovevi-map-publish-v${plan.mapVersion}")
         }.also { tempDir = it }
         val scheme = TileScheme(plan.widthPx, plan.heightPx, plan.tileSize)
-        TilePyramidGenerator.generate(plan.sourceImage.toPath(), scheme, dir, plan.mapVersion)
+        TilePyramidGenerator.generate(
+            plan.sourceImage.toPath(), scheme, dir, plan.mapVersion, format = plan.format,
+        )
         return dir.resolve(plan.mapVersion.toString())
     }
 
@@ -284,6 +294,7 @@ class SupabaseMapPublisher(
 
         val contentType = when (localPath.extension.lowercase()) {
             "jpg", "jpeg" -> ContentType.Image.JPEG
+            "webp" -> ContentType.Image.WEBP
             else -> ContentType.Image.PNG
         }
         var lastError: Exception? = null
@@ -336,11 +347,18 @@ class SupabaseMapPublisher(
  * `tile_url_template` it builds and the object paths [SupabaseMapPublisher] actually uploads to
  * agree with each other without any network involved.
  */
-internal fun tileUrlTemplate(baseUrl: String, mapVersion: Int): String =
+/** Every "Load map image..." run through this publisher uses this format — see [TileFormat]'s own KDoc for why WebP is the default. */
+internal val DEFAULT_TILE_FORMAT = TileFormat.WEBP
+
+internal fun tileUrlTemplate(
+    baseUrl: String,
+    mapVersion: Int,
+    format: TileFormat = DEFAULT_TILE_FORMAT
+): String =
     "$baseUrl/storage/v1/object/public/$MAP_TILES_BUCKET/${
         tileObjectPath(
             mapVersion,
-            "{z}/{x}/{y}.png"
+            "{z}/{x}/{y}.${format.extension}"
         )
     }"
 
