@@ -9,7 +9,11 @@ import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.value
 import platform.CoreFoundation.CFDictionaryRef
+import platform.CoreFoundation.CFRelease
+import platform.CoreFoundation.CFStringRef
 import platform.CoreFoundation.CFTypeRefVar
+import platform.Foundation.CFBridgingRelease
+import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSData
 import platform.Foundation.NSMutableDictionary
 import platform.Foundation.NSNumber
@@ -35,12 +39,14 @@ private const val ACCOUNT = "session"
 
 /**
  * iOS Keychain (`kSecClassGenericPassword`, Apple's own secure, per-app-sandboxed credential
- * store). `kSecClass`/etc. are `CFStringRef` constants; cast `as NSString` to use as
- * `NSMutableDictionary` keys/values, and the dictionary itself `as CFDictionaryRef` to call the
- * `Security` framework's plain-C API — both casts are the standard Kotlin/Native idiom for
- * Foundation/CoreFoundation's toll-free-bridged types (`NSString`<->`CFStringRef`,
- * `NSDictionary`<->`CFDictionaryRef`), verified by actually compiling this file against the
- * `iosSimulatorArm64` target, not from memory.
+ * store). Crossing the Foundation (`NSString`/`NSDictionary`) <-> CoreFoundation
+ * (`CFStringRef`/`CFDictionaryRef`) boundary needs the explicit `CFBridging*` bridge functions on
+ * both sides — Kotlin/Native wraps CF's `CPointer`s and Foundation's `ObjCObject`s as genuinely
+ * different Kotlin types, so a plain `as` cast between them compiles (it's unchecked, hence
+ * `@Suppress("CAST_NEVER_SUCCEEDS")`) but throws at runtime despite the two being toll-free
+ * bridged at the ABI level. [toNSString] converts the `kSec*` constants (safe without a matching
+ * retain — they're process-lifetime constant strings); [useAsCFDictionary] converts the query
+ * dictionary the other direction, balancing the bridge's implied retain with [CFRelease].
  */
 @Suppress("CAST_NEVER_SUCCEEDS")
 @OptIn(ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
@@ -49,17 +55,17 @@ actual class SecureSessionManager actual constructor(context: PlatformContext) :
     actual override suspend fun saveSession(session: UserSession) {
         deleteFromKeychain()
         val query = baseQuery()
-        query.setObject(stringToData(encodeSession(session)), forKey = kSecValueData as NSString)
-        SecItemAdd(query as CFDictionaryRef, null)
+        query.setObject(stringToData(encodeSession(session)), forKey = kSecValueData.toNSString())
+        query.useAsCFDictionary { SecItemAdd(it, null) }
     }
 
     actual override suspend fun loadSession(): UserSession? {
         val query = baseQuery()
-        query.setObject(NSNumber(bool = true), forKey = kSecReturnData as NSString)
-        query.setObject(kSecMatchLimitOne as NSString, forKey = kSecMatchLimit as NSString)
+        query.setObject(NSNumber(bool = true), forKey = kSecReturnData.toNSString())
+        query.setObject(kSecMatchLimitOne.toNSString(), forKey = kSecMatchLimit.toNSString())
         return memScoped {
             val result = alloc<CFTypeRefVar>()
-            val status = SecItemCopyMatching(query as CFDictionaryRef, result.ptr)
+            val status = query.useAsCFDictionary { SecItemCopyMatching(it, result.ptr) }
             if (status != errSecSuccess) return@memScoped null
             val data = result.value as? NSData ?: return@memScoped null
             decodeSessionOrNull(dataToString(data))
@@ -71,15 +77,26 @@ actual class SecureSessionManager actual constructor(context: PlatformContext) :
     }
 
     private fun deleteFromKeychain() {
-        SecItemDelete(baseQuery() as CFDictionaryRef)
+        baseQuery().useAsCFDictionary { SecItemDelete(it) }
     }
 
     private fun baseQuery(): NSMutableDictionary {
         val dict = NSMutableDictionary()
-        dict.setObject(kSecClassGenericPassword as NSString, forKey = kSecClass as NSString)
-        dict.setObject(SERVICE, forKey = kSecAttrService as NSString)
-        dict.setObject(ACCOUNT, forKey = kSecAttrAccount as NSString)
+        dict.setObject(kSecClassGenericPassword.toNSString(), forKey = kSecClass.toNSString())
+        dict.setObject(SERVICE, forKey = kSecAttrService.toNSString())
+        dict.setObject(ACCOUNT, forKey = kSecAttrAccount.toNSString())
         return dict
+    }
+
+    private fun CFStringRef?.toNSString(): NSString = CFBridgingRelease(this) as NSString
+
+    private inline fun <T> NSMutableDictionary.useAsCFDictionary(block: (CFDictionaryRef) -> T): T {
+        val ref = CFBridgingRetain(this) as CFDictionaryRef
+        try {
+            return block(ref)
+        } finally {
+            CFRelease(ref)
+        }
     }
 
     private fun stringToData(value: String): NSData =

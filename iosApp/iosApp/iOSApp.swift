@@ -10,7 +10,7 @@ struct iOSApp: App {
                 // opens the app here — forwarded straight into Kotlin, which owns the actual
                 // Supabase session completion (AuthDeepLinks.ios.kt). No auth logic in Swift.
                 .onOpenURL { url in
-                    AuthDeepLinksKt.handleIosAuthDeepLink(url: url)
+                    AuthDeepLinks_iosKt.handleIosAuthDeepLink(url: url)
                 }
         }
     }

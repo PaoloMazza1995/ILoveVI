@@ -1,5 +1,10 @@
 TEAM_ID=
 
+// SQLDelight's iOS native-driver cinterops against system sqlite3; Shared.framework is a
+// static framework (isStatic = true in shared/build.gradle.kts) so it doesn't auto-pull this
+// in like a dynamic framework would — the app target has to link it explicitly.
+OTHER_LDFLAGS = $(inherited) -lsqlite3
+
 PRODUCT_NAME=ILoveVI
 PRODUCT_BUNDLE_IDENTIFIER=com.pamaz.vi.ILoveVI$(TEAM_ID)
 
