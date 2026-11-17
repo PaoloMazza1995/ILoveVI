@@ -28,6 +28,10 @@ import com.pamaz.vi.design.IloveViTheme
 /**
  * design/components/NavBar/README.md: always 5 destinations (Map, Catalog, Music, News,
  * Settings), never fewer or more (v1.1 adds News).
+ *
+ * [Music] is currently hidden from [IloveViNavBar] (see [VisibleNavDestinations]) rather than
+ * removed here: [com.pamaz.vi.navigation.AppDestination.Tab.Music] and its route/screen still
+ * exist and stay valid, just unreachable from the bar until it's unhidden.
  */
 enum class IloveViNavDestination(val label: String) {
     Map("Map"),
@@ -36,6 +40,9 @@ enum class IloveViNavDestination(val label: String) {
     News("News"),
     Settings("Settings"),
 }
+
+/** The destinations [IloveViNavBar] actually renders -- [IloveViNavDestination.Music] excluded while it's hidden. */
+private val VisibleNavDestinations = IloveViNavDestination.entries.filterNot { it == IloveViNavDestination.Music }
 
 /**
  * Label under the icon at 12sp/600: literal value from preview.html, does not match the
@@ -50,8 +57,9 @@ private fun navLabelStyle(): TextStyle = TextStyle(
 )
 
 /**
- * Fixed navigation bar, 5 destinations, 72dp height, 1px top border,
- * no shadow. Active: brand-pink; inactive: ink-muted. No category color here.
+ * Fixed navigation bar, 72dp height, 1px top border, no shadow. Renders
+ * [VisibleNavDestinations] (4 destinations while [IloveViNavDestination.Music] is hidden, 5
+ * normally). Active: brand-pink; inactive: ink-muted. No category color here.
  * Each destination gets equal width (`weight(1f)`); the label is clipped to a single line with
  * an ellipsis because at narrow widths (5 items in 360dp = 72dp/column) a longer translated
  * label such as the Italian "Impostazioni" would otherwise overflow its column.
@@ -77,7 +85,7 @@ fun IloveViNavBar(
                 )
             },
     ) {
-        IloveViNavDestination.entries.forEach { destination ->
+        VisibleNavDestinations.forEach { destination ->
             val tint = if (destination == selected) IloveViColors.brandPink else IloveViColors.inkMuted
             Column(
                 modifier = Modifier
