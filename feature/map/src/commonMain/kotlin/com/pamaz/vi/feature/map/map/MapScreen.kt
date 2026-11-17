@@ -1,5 +1,6 @@
 package com.pamaz.vi.feature.map.map
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,7 +37,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pamaz.vi.core.data.repository.CatalogRepository
 import com.pamaz.vi.core.data.repository.MapPinWithEntryName
@@ -49,6 +54,7 @@ import com.pamaz.vi.core.model.EntryCategory
 import com.pamaz.vi.core.model.EntryRef
 import com.pamaz.vi.core.model.map.TileScheme
 import com.pamaz.vi.design.IloveViColors
+import com.pamaz.vi.design.IloveViFontFamily
 import com.pamaz.vi.design.IloveViSpacing
 import com.pamaz.vi.design.components.IconFilter
 import com.pamaz.vi.design.components.IconSearch
@@ -80,7 +86,10 @@ import ilovevi.feature.map.generated.resources.map_search_content_description
 import ilovevi.feature.map.generated.resources.map_search_placeholder
 import ilovevi.feature.map.generated.resources.map_view_details
 import ilovevi.feature.map.generated.resources.map_wordmark
+import ilovevi.core.design.generated.resources.Res as DesignRes
+import ilovevi.core.design.generated.resources.ic_app_logo
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
@@ -253,6 +262,20 @@ private fun CategoryChip(
     )
 }
 
+/**
+ * [IloveViFontFamily.display] (Anton) at a small size: the same typeface the "ILoveVI" wordmark
+ * used before it became [ic_app_logo][ilovevi.core.design.generated.resources.ic_app_logo], not
+ * `MaterialTheme.typography.labelSmall` -- that M3 slot has no token override (see Type.kt), so
+ * it silently falls back to the default system font instead of the brand's display face.
+ */
+@Composable
+private fun wordmarkLabelStyle(): TextStyle = TextStyle(
+    fontFamily = IloveViFontFamily.display(),
+    fontSynthesis = FontSynthesis.None,
+    fontSize = 12.sp,
+    letterSpacing = 1.sp,
+)
+
 @Composable
 private fun MapHeader(
     onSearchClick: () -> Unit,
@@ -266,11 +289,23 @@ private fun MapHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(
-            text = stringResource(Res.string.map_wordmark),
-            color = IloveViColors.brandPink,
-            style = MaterialTheme.typography.displaySmall,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(IloveViSpacing.space2),
+        ) {
+            Image(
+                painter = painterResource(DesignRes.drawable.ic_app_logo),
+                // Decorative: the "ILoveVI" label right next to it already conveys this to
+                // screen readers, so this avoids announcing the same text twice.
+                contentDescription = null,
+                modifier = Modifier.height(40.dp),
+            )
+            Text(
+                text = stringResource(Res.string.map_wordmark),
+                color = IloveViColors.brandPink,
+                style = wordmarkLabelStyle(),
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(IloveViSpacing.space2)) {
             IloveViIconButton(
                 contentDescription = stringResource(Res.string.map_search_content_description),
