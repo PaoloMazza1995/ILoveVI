@@ -1,6 +1,7 @@
 package com.pamaz.vi.core.network.di
 
 import com.pamaz.vi.core.network.SupabaseClientProvider
+import com.pamaz.vi.core.network.auth.SecureSessionManager
 import com.pamaz.vi.core.network.config.SupabaseConfig
 import com.pamaz.vi.core.network.datasource.FeedSourceRemoteDataSource
 import com.pamaz.vi.core.network.datasource.FeedSourceRemoteDataSourceImpl
@@ -33,7 +34,12 @@ import org.koin.dsl.module
  * 7B), deliberately not this module's.
  */
 val networkModule = module {
-    single<SupabaseClient> { SupabaseClientProvider.create(SupabaseConfig.fromBuildConfig()) }
+    single<SupabaseClient> {
+        SupabaseClientProvider.create(
+            config = SupabaseConfig.fromBuildConfig(),
+            sessionManager = SecureSessionManager(get()),
+        )
+    }
     single<WeaponRemoteDataSource> { WeaponRemoteDataSourceImpl(get()) }
     single<VehicleRemoteDataSource> { VehicleRemoteDataSourceImpl(get()) }
     single<ItemRemoteDataSource> { ItemRemoteDataSourceImpl(get()) }

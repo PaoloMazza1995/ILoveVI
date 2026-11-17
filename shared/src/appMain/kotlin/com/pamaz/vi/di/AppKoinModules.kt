@@ -6,6 +6,7 @@ import com.pamaz.vi.core.network.di.networkModule
 import com.pamaz.vi.feature.catalog.di.catalogFeatureModule
 import com.pamaz.vi.feature.map.di.mapFeatureModule
 import com.pamaz.vi.feature.news.di.newsFeatureModule
+import com.pamaz.vi.feature.settings.di.settingsFeatureModule
 import org.koin.core.module.Module
 import org.koin.dsl.module
 
@@ -35,5 +36,6 @@ internal fun allAppKoinModules(platformContextModule: Module): List<Module> = li
     catalogFeatureModule,
     mapFeatureModule,
     newsFeatureModule,
+    settingsFeatureModule,
     appModule,
 )

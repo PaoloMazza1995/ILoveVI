@@ -135,8 +135,17 @@ entirely:
 
 `verifyMigrations.set(true)` is on in the Gradle config (`core/database/build.gradle.kts`), so a
 future schema change that isn't paired with a correct `.sqm` migration file fails the build rather
-than silently corrupting an existing on-device database. Schema is version 1; no migrations exist
-yet.
+than silently corrupting an existing on-device database. Three migrations exist today: `2.sqm`
+(step 12B, `newsItemEntity` tombstones) and `3.sqm` (step 13B, `preferencesEntity.themeMode` —
+`ALTER TABLE preferencesEntity ADD COLUMN themeMode TEXT NOT NULL DEFAULT 'SYSTEM'`, the same
+default `:core:design`'s `IloveViThemeMode`/`shared`'s `App()` fall back to for an install with no
+stored preference yet). The committed schema snapshot is regenerated after each
+(`generateCommonMainIloveViDatabaseSchema`) — this Gradle setup's own internal version counter
+doesn't track 1:1 with the number of `.sqm` files present (confirmed empirically, not just assumed:
+regenerating with only `2.sqm` present produced a `3.db` snapshot, and adding `3.sqm` advanced it to
+`4.db` — an off-by-one from the naive "N migrations → N+1.db" expectation, harmless as long as the
+snapshot is always regenerated and `verifyCommonMainIloveViDatabaseMigration` re-run after any
+schema change, which it was for both).
 
 **Upsert syntax note:** `ON CONFLICT(id) DO UPDATE SET ...` (SQLite's standard `UPSERT`, added in
 3.24) needed `dialect(libs.sqldelight.dialect)` added to the `sqldelight { databases { ... } }`

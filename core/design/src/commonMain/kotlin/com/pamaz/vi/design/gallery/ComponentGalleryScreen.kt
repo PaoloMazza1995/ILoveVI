@@ -31,6 +31,7 @@ import com.pamaz.vi.design.IloveViColors
 import com.pamaz.vi.design.IloveViNewsTopic
 import com.pamaz.vi.design.IloveViSpacing
 import com.pamaz.vi.design.IloveViTheme
+import com.pamaz.vi.design.IloveViThemeMode
 import com.pamaz.vi.design.components.IconArrowBack
 import com.pamaz.vi.design.components.IconCheck
 import com.pamaz.vi.design.components.IconMusicNote
@@ -61,10 +62,17 @@ import com.pamaz.vi.design.components.IloveViStatusBadge
 /**
  * Visual catalog of all the design system's components and their variants, grouped by
  * section: used to check the entire system at a glance in a single scrollable view.
+ *
+ * The theme toggle at the top drives this screen's own local [IloveViThemeMode] state — a
+ * standalone preview surface, not wired to the real app's stored preference (`:core:data`'s
+ * `SettingsRepository`/`:feature:settings`'s Appearance section own that) — so every component
+ * below it can be checked in Light, Dark and the device's current System setting without leaving
+ * this screen.
  */
 @Composable
 fun ComponentGalleryScreen() {
-    IloveViTheme {
+    var themeMode by remember { mutableStateOf(IloveViThemeMode.System) }
+    IloveViTheme(themeMode = themeMode) {
         Box(modifier = Modifier.fillMaxSize().background(IloveViColors.bg900)) {
             Column(
                 modifier = Modifier
@@ -73,6 +81,18 @@ fun ComponentGalleryScreen() {
                     .padding(IloveViSpacing.space6),
                 verticalArrangement = Arrangement.spacedBy(IloveViSpacing.space7),
             ) {
+                GallerySection("Theme") {
+                    IloveViChipGroup {
+                        IloveViThemeMode.entries.forEach { mode ->
+                            IloveViChip(
+                                label = mode.name,
+                                active = themeMode == mode,
+                                onClick = { themeMode = mode },
+                            )
+                        }
+                    }
+                }
+
                 GallerySection("Button") {
                     IloveViButton(text = "Show on map", onClick = {}, variant = IloveViButtonVariant.Primary)
                     IloveViButton(text = "Add more tracks", onClick = {}, variant = IloveViButtonVariant.Secondary)

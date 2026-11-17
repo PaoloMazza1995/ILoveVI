@@ -33,6 +33,9 @@ supabase = "3.1.4"
 kotlin-csv = "1.10.0"
 koin = "4.1.1"
 koin_annotations = "2.3.1"
+androidx-credentials = "1.6.0"
+googleid = "1.2.1"
+androidx-security-crypto = "1.1.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -85,6 +88,13 @@ supabase_bom = { group = "io.github.jan-tennert.supabase", name = "bom", version
 supabase_postgrest = { group = "io.github.jan-tennert.supabase", name = "postgrest-kt" }
 supabase_auth = { group = "io.github.jan-tennert.supabase", name = "auth-kt" }
 supabase_storage = { group = "io.github.jan-tennert.supabase", name = "storage-kt" }
+
+# Google sign-in (step 13B): Android Credential Manager + ID-token, see docs/auth-notes.md.
+androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "androidx-credentials" }
+androidx-credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "androidx-credentials" }
+googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
+# Android Keystore-backed session storage (step 13B's "session stored securely" requirement).
+androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "androidx-security-crypto" }
 
 kotlin_csv = { group = "com.github.doyaaaaaken", name = "kotlin-csv-jvm", version.ref = "kotlin-csv" }
 

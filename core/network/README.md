@@ -10,25 +10,38 @@ this module — that's step 12B.
 ## Dependencies
 
 `:core:model` (the `Weapon`/`Vehicle`/`Item`/`Station`/`Song`/`MapConfig`/`MapPin`/`EntryRef`/
-`FeedSource` classes this module's rows map to), supabase-kt's `postgrest-kt` (query building +
-response decoding), Ktor (`client-core`, `content-negotiation`,
+`FeedSource` classes this module's rows map to), supabase-kt's `postgrest-kt` + (step 13B) `auth-kt`
+(query building/response decoding + the `Auth` plugin), Ktor (`client-core`, `content-negotiation`,
 `serialization-kotlinx-json`, plus one platform engine), `kotlinx-serialization-json` (DTOs),
 `kotlinx-coroutines-core` and plain Koin (`networkModule`, same style as `:core:database`'s
 `databaseModule`/`:tools:map-editor`'s `appModule` — not the dormant koin-annotations/KSP convention
-plugin). Deliberately **not** a dependency: `:core:database`, `:core:data` or Compose — this module
-only moves bytes off the wire into `:core:model` shapes; reconciling that with the local database is
-a sync engine's job (`:core:data`, step 7B), not this one's.
+plugin). **`:core:database` is now a dependency too** (step 13B, was previously explicitly *not*
+one): `auth/SecureSessionManager.kt`'s Android `actual` needs a real `Context` (via
+`:core:database`'s `PlatformContext`, the same type `:core:data`'s `ConnectivityMonitor` already
+reuses) to open `EncryptedSharedPreferences`. Still deliberately **not** a dependency: `:core:data`
+or Compose — this module only moves bytes off the wire into `:core:model` shapes (plus, now, a
+secure session store); reconciling content with the local database is a sync engine's job
+(`:core:data`, step 7B), and `AccountServiceImpl` (also `:core:data`, step 13B) is what actually
+calls `Auth`/`Postgrest` for sign-in/account-deletion — see `core/data/README.md`.
 
 ## Client configuration
 
-The app ships with **no sign-in** (read-only public content), so this module only ever needs the
-project URL and the **publishable/anon key** — never the service-role key, never a session.
+The project URL and the **publishable/anon key** — never the service-role key.
 `config/SupabaseConfig.kt`'s `fromBuildConfig()` reads two `const val`s
 (`config/NetworkBuildConfig.kt`, **generated**, not committed) that this module's
 `generateNetworkBuildConfig` Gradle task (`build.gradle.kts`) writes at build time from the
 `SUPABASE_URL`/`SUPABASE_ANON_KEY` environment variables, falling back to the git-ignored root
 `local.properties` — the exact same two keys `:tools:map-editor`/`:tools:tilegen` already read for
 their own Supabase clients.
+
+**Step 13B** added two more keys, read the same way into the same generated file:
+`GOOGLE_WEB_CLIENT_ID`/`GOOGLE_IOS_CLIENT_ID`, exposed publicly via `config/GoogleAuthConfig.kt`'s
+own `fromBuildConfig()` (mirrors `SupabaseConfig`'s shape exactly). `GOOGLE_WEB_CLIENT_ID` backs
+both Android's Credential Manager server client ID and the web-OAuth Google flow on every other
+platform; `GOOGLE_IOS_CLIENT_ID` is read but not used by the shipped iOS flow today (web OAuth, not
+native `GoogleSignIn-iOS`) — it's the extension point for a future native-iOS-Google switch, see
+`docs/auth-notes.md` §1/§6. A missing `GOOGLE_WEB_CLIENT_ID` fails loudly via `require(...)`, same
+as the Supabase keys; a missing `GOOGLE_IOS_CLIENT_ID` is allowed to stay blank.
 
 This is a different mechanism from those two JVM-only tools on purpose: they're CLI processes that
 forward real env vars into their own `JavaExec`/`run` task at run time
@@ -44,14 +57,43 @@ silently pointing at nothing.
 
 ## `SupabaseClientProvider`
 
-Builds the one `SupabaseClient` every remote data source shares: `useHTTPS = true`, only
-`Postgrest` installed (no `Auth` — this module never signs in), a small request/connect/socket
-timeout (15s/10s/15s) and a 2-retry exponential-backoff policy on server errors
-(`HttpRequestRetry.retryOnServerErrors`) — safe to retry blindly because every call this module
-makes is a plain `select` (idempotent by construction, never a write). The HTTP engine is
+Builds the one `SupabaseClient` every remote data source shares: `useHTTPS = true`, `Postgrest`
+and (step 13B) `Auth` installed, a small request/connect/socket timeout (15s/10s/15s) and a 2-retry
+exponential-backoff policy on server errors (`HttpRequestRetry.retryOnServerErrors`) — safe to retry
+blindly because every call this module makes directly is a plain `select` (idempotent by
+construction, never a write; `AccountServiceImpl`'s own writes, in `:core:data`, are a sign-in or
+the `delete_own_account` RPC, neither retried blindly). The HTTP engine is
 `networkHttpClientEngine()`, an `expect`/`actual` factory (OkHttp on Android/JVM, Darwin on iOS) —
 the same `expect`/`actual` shape `:core:database`'s `DatabaseDriverFactory` already uses for its
 per-platform SQLite driver. Tests pass a `MockEngine` instead via the same `engine` parameter.
+
+`create(...)`'s `sessionManager` parameter defaults to `null`, leaving `Auth` on its own built-in
+`SettingsSessionManager` (plain `SharedPreferences`/`NSUserDefaults`) — fine for this module's own
+tests, which never exercise `Auth`, and keeps this function free of a `:core:database`
+`PlatformContext` dependency it otherwise wouldn't need (see `auth/SecureSessionManager.kt` below).
+The real app (`di/NetworkModule.kt`'s `networkModule`) passes a real `SecureSessionManager` instead.
+
+## `auth/` (step 13B)
+
+- **`SecureSessionManager`**: implements supabase-kt's `SessionManager` with real platform-secure
+  storage instead of the plugin's own plain-storage default — Android's `actual` uses
+  `EncryptedSharedPreferences` (Android Keystore-backed, `androidx.security:security-crypto`); iOS's
+  `actual` uses the Keychain, written directly in Kotlin against `platform.Security`
+  (`kSecClassGenericPassword`) per this repo's established "write iOS platform code directly against
+  system frameworks" convention — no CocoaPods, no SPM. The `kSecClass`/etc. CoreFoundation
+  constants are cast `as NSString` and the query dictionary `as CFDictionaryRef` to call the plain-C
+  `Security` API from an `NSMutableDictionary` — the standard (if compiler-warning-producing,
+  `@Suppress("CAST_NEVER_SUCCEEDS")`'d) Kotlin/Native idiom for these toll-free-bridged
+  Foundation/CoreFoundation type pairs. `jvmMain`'s is a plain in-memory fallback (this app never
+  ships a JVM build users sign into). `SessionJson.kt` holds the shared `UserSession`
+  encode/decode logic all three `actual`s call.
+- **`GoogleAuthConfig`**: see "Client configuration" above.
+
+None of this reaches a real `AuthProvider`/ID-token flow directly — the platform-specific Google
+Credential Manager / Apple `AuthenticationServices` code lives in `:core:data`
+(`core/data/.../auth/`), since `AccountServiceImpl` (the one thing that implements `:core:data`'s
+`AccountService` interface) has to live there too — this module can't depend on `:core:data`
+without a circular dependency. See `core/data/README.md` and `docs/auth-notes.md` for that half.
 
 ## DTOs and mapping
 
@@ -194,3 +236,12 @@ green. supabase-kt's `Postgrest`/`SupabaseClientBuilder` APIs used here (`httpEn
 established convention for third-party API surfaces — `ConnectTimeoutException`/
 `HttpRequestTimeoutException`'s presence in Ktor's commonMain (not JVM-only) is standard, widely
 documented Ktor knowledge and was not independently decompiled.
+
+**Step 13B's `auth/` additions**: `Auth`'s `signInWith`/`SessionStatus`/`SignOutScope`/
+`SessionManager` surfaces, and `handleDeeplinks` (both the Android `Intent` and iOS `NSURL`
+overloads), were all verified the same way — `javap` against the real 3.1.4 `auth-kt` jar, not from
+memory. `SecureSessionManager`'s Android `EncryptedSharedPreferences` path and iOS Keychain path
+both compile cleanly (`:core:network:compileAndroidMain`/`compileKotlinIosSimulatorArm64`, both
+re-run clean after every change) but were **not exercised against a real Keystore/Keychain on a
+device** — same "no device in this sandbox" limitation every GUI/platform-API step in this roadmap
+has already flagged, now specifically true for this module's own platform code too.

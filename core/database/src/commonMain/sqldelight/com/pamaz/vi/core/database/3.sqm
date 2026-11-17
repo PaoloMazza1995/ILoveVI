@@ -1,0 +1,5 @@
+-- Step 13B: themeMode preference (System/Light/Dark), stored as the enum's name. Defaults to
+-- 'SYSTEM' so existing installs (upgrading from before this column existed) keep following the
+-- device setting, the same default `:core:design`'s IloveViThemeMode itself uses.
+
+ALTER TABLE preferencesEntity ADD COLUMN themeMode TEXT NOT NULL DEFAULT 'SYSTEM';

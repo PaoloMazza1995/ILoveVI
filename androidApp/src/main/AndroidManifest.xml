@@ -17,11 +17,27 @@
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:exported="true"
+                android:launchMode="singleTop"
             android:name=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Step 13B: Supabase's OAuth redirect (Google on non-Android web-OAuth paths,
+                 Apple's own provider config) and Credential Manager's own flow both land here.
+                 `singleTop` above means a redirect reuses this same Activity instance
+                 (onNewIntent), instead of a second one stacking on top. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                        android:scheme="com.pamaz.vi"
+                        android:host="login-callback" />
             </intent-filter>
         </activity>
     </application>

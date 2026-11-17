@@ -10,6 +10,12 @@ from the local SQLite database; the network only ever feeds that database, throu
 `:core:model`, `:core:database` (the DAOs this module wraps/writes through), `:core:network` (the
 remote data sources `ContentSyncer` drives), `kotlinx-coroutines-core`, `kotlinx-serialization-json`
 (the bundled seed), and plain Koin (`dataModule`, same style as `databaseModule`/`networkModule`).
+**Step 13B** adds supabase-kt's `auth-kt`/`postgrest-kt` directly (this module's own
+`implementation`, not leaked from `:core:network`'s — same "implementation, never api" convention
+every module here follows): `AccountServiceImpl` calls `Auth.signInWith`/`Auth.signOut` and the
+`delete_own_account` RPC itself. Android also gains `androidx.credentials`/`credentials-play-
+services-auth`/`googleid` (Google sign-in's Credential Manager flow, `auth/
+GoogleIdTokenRequester.android.kt`).
 
 ## Repositories
 
@@ -26,7 +32,43 @@ own implementation detail and could be swapped without any feature module notici
   rename/create/delete — local-only, never synced, no backend table for them at all).
 - **`MapRepository`**: current `MapConfig`, pins (optionally filtered by category/sub-type, joined
   with their entry's display name).
-- **`SettingsRepository`**: user preferences.
+- **`SettingsRepository`**: user preferences, including (step 13B) `themeMode` — a plain `String`
+  (this module has no `:core:design` dependency, so it can't hold `IloveViThemeMode` itself;
+  `:feature:settings`'s
+  `SettingsViewModel` is the one place that maps the string to/from the real enum).
+
+## Account and Spotify (step 13B)
+
+- **`AccountService`** (`repository/AccountService.kt`, interface) / **`AccountServiceImpl`**
+  (`repository/AccountServiceImpl.kt`, the real implementation — lives here, not in `:core:network`,
+  despite that module owning the `SupabaseClient`: this class implements a `:core:data` interface,
+  and `:core:network` can't depend back on `:core:data` without a cycle). Wraps the shared
+  `SupabaseClient`'s `Auth` plugin; Google sign-in is native (Android, `auth/
+  GoogleIdTokenRequester.android.kt`, Credential Manager) or web-OAuth (every other platform); Apple
+  sign-in is native-only and iOS-only (`auth/AppleIdTokenRequester.ios.kt`,
+  `AuthenticationServices`, no CocoaPods/SPM). `availableProviders` filters by platform
+  (`getPlatformName()`, `CurrentPlatform.kt`) so the Settings screen never offers a button that
+  can't work. See `docs/auth-notes.md` for the full research behind every choice here, and
+  `backend/supabase/migrations/*_delete_own_account_rpc.sql` for the server side of
+  `deleteAccount()`.
+- **`AccountErrorReason`**: a closed, platform-independent enum — `AccountState.Error`/
+  `AccountErrorException` carry one of these, never a raw message, token or key.
+  `:feature:settings`'s `SettingsViewModel` is the only place that maps a reason to a real,
+  localized sentence (this module has no string resources).
+- **`Sha256.kt`**: a small pure-Kotlin SHA-256, used only by `AppleIdTokenRequester.ios.kt`'s nonce
+  hash (Android's own Google flow uses `java.security.MessageDigest` instead, needing no equivalent
+  here) — see that file's KDoc for why no platform API was reached for instead. Verified against the
+  FIPS 180-4 test vectors for `""`/`"abc"`/a 56-byte multi-block input in `Sha256Test.kt`.
+- **`SpotifyConnection`** (`spotify/SpotifyConnection.kt`, interface) / **`FakeSpotifyConnection`**
+  (the only binding today, `dataModule`, always `SpotifyConnectionState.Unavailable`) — the
+  extension point step 13A will implement for real; nothing about this interface or `dataModule`'s
+  shape should need to change to do that, only the one binding swapped.
+- **`FeatureFlags.spotify`** (`FeatureFlags.kt`): `false`, a plain `const val`. `:feature:settings`
+  's screen (not its `ViewModel` — see that module's README for why) is the only place this is read.
+- **`AppVersion.kt`**: `appVersionName(PlatformContext)` reads the real installed package/bundle
+  version (Android: `PackageManager.getPackageInfo`; iOS:
+  `NSBundle.mainBundle.infoDictionary`'s `CFBundleShortVersionString`) rather than duplicating
+  `androidApp`'s `versionName`/iOS's `MARKETING_VERSION` as a second, driftable constant.
 
 `MusicRepository`/`MapRepository`/`SettingsRepository` each have their own `Compilation`/
 `CompilationSongEntry`/`MapPinWithEntryName`/`Preferences` (`repository/RepositoryTypes.kt`), with
@@ -120,9 +162,10 @@ need to track anyway, since it's entirely under this module's own control.
 
 ## Koin
 
-`di/DataModule.kt`'s `dataModule`: the four repositories, `ConnectivityMonitor`, `SeedImporter` and
-`ContentSyncer`, all as singles. Expects `databaseModule` and `networkModule` to already be included
-wherever this one is (every binding here resolves at least one of their singles), plus a
+`di/DataModule.kt`'s `dataModule`: the four repositories, `ConnectivityMonitor`, `SeedImporter`,
+`ContentSyncer` and (step 13B) `AccountService`/`SpotifyConnection`/`GoogleIdTokenRequester`/
+`AppleIdTokenRequester`, all as singles. Expects `databaseModule` and `networkModule` to already be
+included wherever this one is (every binding here resolves at least one of their singles), plus a
 `PlatformContext` single — the same requirement `databaseModule` already documents.
 
 ## Tests
@@ -155,6 +198,9 @@ with so a test can assert exactly what the second sync requested):
   client involved ("shows data with the network off"), then a second sync against the same,
   unchanged backend asserts no error and nothing left to apply. Self-skips (logs why, doesn't fail)
   unless `SUPABASE_URL`/`SUPABASE_ANON_KEY` are set to a local stack's printed values.
+- **`Sha256Test`** (step 13B): the three FIPS 180-4 test vectors described above.
+- **`SettingsRepositoryTest`** (step 13B addition): `themeMode` persists and round-trips
+  independently of the other preference fields.
 
 ## What wasn't verified here
 
@@ -177,3 +223,11 @@ when a *second* Gradle module independently depends on it for its own test binar
 module's Kotlin source, and not a caching artifact (`-Pkotlin.native.cacheKind=none` made no
 difference). Every required test, including the full "resumes after an interruption"/"one table
 failing" scenarios, is still fully exercised and green on the JVM target.
+
+**Step 13B**: for the same pre-existing reason, `AccountServiceImpl`/`GoogleIdTokenRequester`/
+`AppleIdTokenRequester`/`Sha256`'s new tests are JVM-verified only — `iosSimulatorArm64` *compiles*
+clean (`compileKotlinIosSimulatorArm64`/`compileTestKotlinIosSimulatorArm64`, including
+`AppleIdTokenRequester.ios.kt`'s `AuthenticationServices` cinterop, both re-run clean after every
+change) but isn't *executed* here, same as every other test in this module. No live Google/Apple
+sign-in round trip, no real Credential Manager/Keychain prompt, was possible in this sandbox — same
+"no device" limitation as `:core:network`'s own `auth/` additions.

@@ -12,7 +12,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
-import com.pamaz.vi.design.IloveViColors
+import com.pamaz.vi.design.NightColors
 import ilovevi.core.mapview.generated.resources.Res
 import ilovevi.core.mapview.generated.resources.map_dev
 import ilovevi.core.mapview.generated.resources.map_dev_fallback
@@ -36,12 +36,17 @@ internal fun logMapViewDebug(message: String) {
 }
 
 /**
- * A flat [IloveViColors.bg800] bitmap with no text or grid — the absolute last resort if even
- * `map_dev_fallback.png` can't be read (it ships bundled in this module, so this should never
- * actually trigger outside a broken build). No cross-platform text/shape drawing is attempted
- * here on purpose: [loadDevMapImageOrPlaceholder] already has a real grid-with-labels placeholder
+ * A flat bitmap with no text or grid — the absolute last resort if even `map_dev_fallback.png`
+ * can't be read (it ships bundled in this module, so this should never actually trigger outside a
+ * broken build). No cross-platform text/shape drawing is attempted here on purpose:
+ * [loadDevMapImageOrPlaceholder] already has a real grid-with-labels placeholder
  * (`map_dev_fallback.png`, generated the same way as `:tools:tilegen`'s `PlaceholderMapImage`)
  * for the common "the real dev image is missing" case; this one only needs to never crash.
+ *
+ * Uses [NightColors.bg800] directly, not the theme-reactive [IloveViColors.bg800], since this is
+ * a plain (non-`@Composable`) function with no composition to read the active theme from — a
+ * fixed value is the only option outside Compose, so Night's is kept rather than inventing a
+ * separate non-reactive constant.
  */
 internal fun generateUltimatePlaceholderBitmap(): ImageBitmap {
     val bitmap = ImageBitmap(ULTIMATE_PLACEHOLDER_WIDTH_PX, ULTIMATE_PLACEHOLDER_HEIGHT_PX)
@@ -55,7 +60,7 @@ internal fun generateUltimatePlaceholderBitmap(): ImageBitmap {
             ULTIMATE_PLACEHOLDER_HEIGHT_PX.toFloat()
         ),
     ) {
-        drawRect(color = IloveViColors.bg800, size = size)
+        drawRect(color = NightColors.bg800, size = size)
     }
     return bitmap
 }

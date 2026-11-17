@@ -27,9 +27,11 @@ data class Compilation(
 
 data class CompilationSongEntry(val song: Song, val position: Int)
 
+/** [themeMode] is one of [com.pamaz.vi.design.IloveViThemeMode]'s names ("SYSTEM"/"LIGHT"/"DARK") — a plain `String`, not that enum, since `:core:data` has no `:core:design` dependency (see this module's `build.gradle.kts`: a pure data/repository layer, no Compose). `:feature:settings`'s `SettingsViewModel` is the one place this maps to/from the real enum. */
 data class Preferences(
     val showLabels: Boolean,
     val language: String,
     val selectedNewsTopic: String?,
     val lastContentUpdate: Instant?,
+    val themeMode: String,
 )

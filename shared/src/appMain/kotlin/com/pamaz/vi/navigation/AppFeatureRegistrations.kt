@@ -10,9 +10,9 @@ import com.pamaz.vi.feature.catalog.detail.DetailScreen
 import com.pamaz.vi.feature.map.filters.MapFiltersScreen
 import com.pamaz.vi.feature.map.map.MapScreen
 import com.pamaz.vi.feature.news.news.NewsScreen
+import com.pamaz.vi.feature.settings.settings.SettingsScreen
 import com.pamaz.vi.screens.CompilationScreen
 import com.pamaz.vi.screens.MusicStubScreen
-import com.pamaz.vi.screens.SettingsStubScreen
 
 /**
  * This step's own (only, for now) registrant — see [FeatureRegistration]'s KDoc. Built exactly
@@ -47,7 +47,7 @@ internal fun appFeatureRegistrations(
         )
     },
     FeatureRegistration(AppDestination.Tab.News) { NewsScreen() },
-    FeatureRegistration(AppDestination.Tab.Settings) { SettingsStubScreen() },
+    FeatureRegistration(AppDestination.Tab.Settings) { SettingsScreen() },
 
     FeatureRegistration(AppDestination.Secondary.MapFilters) {
         MapFiltersScreen(onBack = { navController.popBackStack() })

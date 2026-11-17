@@ -10,6 +10,7 @@ data class Preferences(
     val language: String,
     val selectedNewsTopic: String?,
     val lastContentUpdate: Instant?,
+    val themeMode: String,
 )
 
 interface PreferencesDao {
@@ -30,6 +31,7 @@ internal class PreferencesDaoImpl(database: IloveViDatabase) : PreferencesDao {
             language = preferences.language,
             selectedNewsTopic = preferences.selectedNewsTopic,
             lastContentUpdate = preferences.lastContentUpdate?.toEpochMilliseconds(),
+            themeMode = preferences.themeMode,
         )
     }
 }
@@ -40,9 +42,11 @@ private fun preferencesRowToPreferences(
     language: String,
     selectedNewsTopic: String?,
     lastContentUpdate: Long?,
+    themeMode: String,
 ): Preferences = Preferences(
     showLabels = showLabels != 0L,
     language = language,
     selectedNewsTopic = selectedNewsTopic,
     lastContentUpdate = lastContentUpdate?.let(Instant::fromEpochMilliseconds),
+    themeMode = themeMode,
 )

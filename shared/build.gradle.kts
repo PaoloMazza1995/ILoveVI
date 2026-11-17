@@ -85,6 +85,7 @@ kotlin {
             implementation(project(":feature:catalog"))
             implementation(project(":feature:map"))
             implementation(project(":feature:news"))
+            implementation(project(":feature:settings"))
         }
         androidMain {
             kotlin.srcDir("src/appMain/kotlin")
@@ -92,12 +93,18 @@ kotlin {
                 implementation(libs.compose.uiToolingPreview)
                 implementation(libs.compose.uiTooling)
                 appMainDependencies()
+                // handleAndroidAuthDeepLink (Platform.android.kt's neighbor, real androidMain —
+                // not the appMain alias): auth-kt's Android-only `SupabaseClient.handleDeeplinks`
+                // extension, called from androidApp's MainActivity.onNewIntent (step 13B).
+                implementation(libs.supabase.auth)
             }
         }
         iosMain {
             kotlin.srcDir("src/appMain/kotlin")
             dependencies {
                 appMainDependencies()
+                // handleIosAuthDeepLink — see the androidMain block's identical comment.
+                implementation(libs.supabase.auth)
             }
         }
         commonMain.dependencies {
@@ -130,4 +137,6 @@ kotlin {
 
 dependencies {
     androidRuntimeClasspath(libs.compose.uiTooling)
+    "androidMainImplementation"(platform(libs.supabase.bom))
+    "iosMainImplementation"(platform(libs.supabase.bom))
 }

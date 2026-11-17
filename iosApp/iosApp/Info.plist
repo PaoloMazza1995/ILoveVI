@@ -4,5 +4,18 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+    <!-- Step 13B: Google sign-in's web-OAuth redirect lands at com.pamaz.vi://login-callback,
+         handled by iOSApp.swift's .onOpenURL — see docs/auth-notes.md §1. -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.pamaz.vi</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>com.pamaz.vi</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

@@ -18,7 +18,11 @@ its tests) — re-check it yourself rather than trusting an older note or what y
 
 ## Recommended execution order
 
-`P, H, I, 5A, 5A-bis, 8, 5B, 6, 7A, 7B, 9, 10, 11, 12A, 12B, 12C, 13A, 13B, 14, 15, 16`
+`P, H, I, 5A, 5A-bis, 8, 5B, 6, 7A, 7B, 9, 10, 11, 12A, 12B, 12C, 13B, 13A, 14, 15, 16`
+
+(**13B and 13A swapped from the original order**: 13B now needs 6/7A/7B — not just 1 — and 13A now
+needs 13B too, since `SpotifyConnection`'s interface/flag was built as part of 13B's "clean
+extension point" requirement, not 13A's own.)
 
 (4A and 4B are prerequisites already done — see "Done so far" — so they're not repeated in this
 sequence.) H and I are pulled forward, ahead of 5B onward, because 5A/5A-bis/8 already exist and
@@ -1368,18 +1372,232 @@ the per-sub-type icon set once, early, than to rework pin rendering and seed dat
       shaped fixture and the standalone `NewsFeedFetcherTest`s (against `MockEngine`) are what's
       actually verified; wiring the two together against the live URL is unverified beyond that.
 
-- [ ] **13A - feature:spotify** (feature/spotify) - needs: 7B, 1 - done:
-    - Not started. No `feature:spotify` module exists.
+- [ ] **13A - feature:spotify** (feature/spotify) - needs: 7B, 1, 13B (corrected — the interface
+  this step implements now exists and needs 13B's module to light up) - done:
+    - Not started. No `feature:spotify` module exists. **13B already built this step's extension
+      point**: `SpotifyConnection`/`SpotifyConnectionState` (`core/data/.../spotify/`) and
+      `FeatureFlags.spotify` (`core/data/FeatureFlags.kt`, currently `false`). This step's actual
+      job is narrow: implement `SpotifyConnection` for real (replacing `core:data`'s
+      `FakeSpotifyConnection` binding in `di/DataModule.kt` with a real one, nothing else needs to
+      change — `feature:settings`'s Settings screen already renders the Spotify card correctly for
+      every `SpotifyConnectionState`, already tested), flip `FeatureFlags.spotify` to `true`, and
+      resolve the still-open "Spotify access and limits" decision below (API tier, rate limits,
+      whether a backend proxy is needed for secrets).
 
-- [ ] **13B - feature:settings** (feature/settings) - needs: 1 - done:
-    - Not started. No `feature:settings` module exists.
+- [!] **13B - feature:settings, revised** (feature/settings, core/design, core/data, core/network,
+  backend/supabase) - needs: 1, 6, 7A, 7B (corrected from the original "needs: 1" — this step
+  genuinely reads `core:database`'s preferences, `core:network`'s new `Auth` client, and
+  `core:data`'s repositories, unlike step 8's deliberate early/stub exception) - done: 2026-11-07
+    - **Research first, per the step's own instruction**: `docs/auth-notes.md` (supabase-kt's
+      current Android Credential Manager + ID-token flow, iOS web-OAuth for Google, iOS native
+      `AuthenticationServices` for Apple, App Store Guideline 4.8 — closed by implementing Apple
+      sign-in too, a mid-step scope change the user explicitly asked for — Google Play's account-
+      deletion policy, and the `delete_own_account` Postgres RPC chosen over an Edge Function).
+      `docs/requirements-notes.md` (new): SET-04 revised, SET-07/SET-08 added, since the source
+      Functional Analysis is a binary PDF that can't be edited in place.
+    - **Theming** (`core:design`): `ThemeColors` data class + `NightColors`/`LightColors` +
+      `LocalIloveViColors` `CompositionLocal` — `IloveViColors`'s members became `@Composable`
+      getters reading it, so every existing component's `IloveViColors.bg900`-style call site (~20
+      files) kept compiling **unchanged**, picking up the active theme automatically.
+      `IloveViThemeMode` (System/Light/Dark) + `ApplySystemBarsAppearance` (expect/actual: Android
+      `WindowCompat`, iOS `overrideUserInterfaceStyle`, JVM no-op). Light palette hand-derived and
+      WCAG-verified (`ColorContrastTest.kt`, both themes, text ≥4.5:1 / icons+borders ≥3:1) — real
+      failures found and fixed while picking it: Night's `brand-orange`/`brand-teal` both fall under
+      3:1 on a light background, so Light uses darker `#A04E09`/`#0B6E61`; `ink-on-brand`
+      flips from near-black to white since every brand fill is now dark-on-light. One hardcoded
+      color found by the required audit and fixed: `IloveViFeaturedCard`'s gradient start (now the
+      `featuredGradientStart` token, themed like everything else). Gallery screen gained a 3-way
+      Theme toggle. `tokens.json` and `documentation/ilovevi-design-system 2/README.md` updated
+      (Light palette table, v1.3 changelog entry).
+    - **`themeMode` storage**: `core:database`'s `3.sqm` + regenerated schema snapshot (`4.db`,
+      **actually verified** — `generateCommonMainIloveViDatabaseSchema` +
+      `verifyCommonMainIloveViDatabaseMigration` both re-run clean, a real bug caught and fixed in
+      the process: the `.sqm` alone wasn't enough, `Preferences.sq`'s own `CREATE TABLE` needed the
+      same column+default or the two schemas disagreed). `core:data`'s `Preferences`/
+      `SettingsRepository` carry it through as a plain `String` (that module has no `core:design`
+      dependency); `shared`'s `App()` reads it with a blocking first `runBlocking` call before the
+      first frame (no flash of the wrong theme), then reactively via
+      `collectAsStateWithLifecycle` for every change after that (no restart needed).
+    - **Google + Apple sign-in**: `AccountService`/`AccountState`/`AuthProviderId`/
+      `AccountErrorReason` (`core:data`, interface — never a raw message/token/key, a closed reason
+      enum instead), `AccountServiceImpl` (also `core:data`, not `core:network`: it implements a
+      `core:data` interface, and `core:network` can't depend back without a cycle). Android:
+      Credential Manager + ID token (`GoogleIdTokenRequester.android.kt`, real SHA-256-hashed
+      nonce). iOS: web-OAuth for Google, **native** `AuthenticationServices` for Apple
+      (`AppleIdTokenRequester.ios.kt`, Kotlin/Native cinterop, no CocoaPods/SPM — this repo's
+      established "write iOS platform code directly against system frameworks" convention, extended
+      here to a new framework). `SecureSessionManager` (`core:network`): Android
+      `EncryptedSharedPreferences` (Keystore-backed) / iOS Keychain (`platform.Security` cinterop),
+      replacing supabase-kt's own plain-storage default. Every non-obvious supabase-kt/Credential
+      Manager/`AuthenticationServices` API used (`Auth.signInWith`, `SessionStatus`,
+      `SignOutScope`, `SessionManager`, `handleDeeplinks`'s Android/iOS overloads,
+      `ASAuthorizationAppleIDProvider`) was verified against the real 3.1.4 jars via `javap`/klib
+      inspection, not from memory, per this repo's established convention.
+    - **Account deletion**: `backend/supabase/migrations/20261106120001_delete_own_account_rpc.sql`
+      — a `security definer` Postgres function (chosen over an Edge Function: this repo's
+      `backend/supabase/functions/` has never shipped one, and this way no service-role key is
+      anywhere, not even in a function secret), deleting only `auth.uid()`'s own row, cascading to
+      `auth.identities`/`auth.sessions`. **Actually run and passing**: `supabase db reset &&
+      supabase test db` — Docker was available in this environment (unlike every single prior
+      backend step in this roadmap) — all 5 pgTAP files, 23/23 assertions, including the new
+      `005_delete_own_account.test.sql`. One real bug caught by actually running it: the test's own
+      verification queries ran as `authenticated`, which has no `SELECT` on `auth.users` by design —
+      fixed by `reset role` before asserting, not by weakening the privilege model.
+    - **`feature:settings`** (new module): `SettingsUiState`/`SettingsViewModel` (one state for the
+      whole screen; `FeatureFlags.spotify` checked only by the screen, not the `ViewModel`, so
+      `spotifyState` stays fully testable regardless of the flag), `SettingsScreen`/
+      `SettingsScreenContent` (stateless, `@Preview`-able — this repo's substitute for the
+      screenshot-testing tooling it doesn't have, 4 previews: signed-in/signed-out × Light/Dark).
+      Sections in the required order: Account, Appearance, Map, Spotify (flagged off —
+      `SpotifyConnection`/`FakeSpotifyConnection` in `core:data`, step 13A's extension point, no
+      Spotify library/module anywhere, grep-confirmed), About, Danger zone (signed-in only). Wired
+      into `shared`'s `AppKoinModules.kt`/`AppFeatureRegistrations.kt`, replacing the step-8
+      `SettingsStubScreen` stub per the navigation contract.
+    - **Tests**: `ColorContrastTest` (both themes, all pairs), `Sha256Test` (FIPS 180-4 vectors,
+      backing the iOS Apple-sign-in nonce), `SettingsRepositoryTest`/`PreferencesDaoTest`
+      (`themeMode` round-trips independently of other fields), `SettingsViewModelTest` (23 cases:
+      theme/language/labels persist, data-refresh progress/error, every account state, Google
+      sign-in success/cancelled/developer-error/offline, sign out, delete-account success/failure,
+      every Spotify state). **Full regression, actually re-run, not assumed**: every touched
+      module's `jvmTest` green (132 tests total: design 13, database 26, data 43, network 27,
+      settings 23), `feature:settings:iosSimulatorArm64Test` 23/23 (this module doesn't have
+      `core:data`'s pre-existing iOS-link limitation, see that module's README),
+      `:androidApp:assembleDebug`, `:shared:testAndroidHostTest`, `:webApp:build` all clean.
+    - **Not `[x]`, specific unmet acceptance items, not silently hidden**:
+        1. **No real device exists in this sandboxed environment** (same limitation every GUI step
+           in this roadmap has already flagged) — nobody has watched Light/Dark/System actually
+           switch on screen, confirmed on-screen contrast by eye, watched the status/nav bar icon
+           color change, or confirmed "no flash of the wrong theme at launch" with a literal
+           stopwatch.
+        2. **No live Google/Apple sign-in round trip was possible** — needs a real device/account
+           and the Apple Developer Portal + Supabase Dashboard steps `docs/auth-notes.md` §2 lists
+           for the user to do by hand (Services ID, Sign in with Apple key, Team ID — `TEAM_ID` is
+           currently blank in `iosApp/Configuration/Config.xcconfig`, found while wiring this).
+        3. **The `iosApp` Xcode scheme does not currently produce a running `.app`** in this
+           specific sandboxed environment: `xcodebuild` itself works here (a first for this
+           roadmap), and every `.kt`/`.swift` file this step touches compiles clean, repeatedly
+           re-verified — but the `:shared:embedAndSignAppleFrameworkForXcode` Gradle task the
+           "Compile Kotlin Framework"
+           script phase depends on reports `SKIPPED` even on a real `xcodebuild` invocation, traced
+           via decompiling the actual Kotlin Gradle Plugin jar to an `onlyIf` check comparing
+           Xcode's environment against the configured framework — most likely a Kotlin Gradle Plugin
+           2.4.20 vs. this sandbox's unusually new/beta Xcode SDK (`iphonesimulator27.2`) mismatch.
+           See
+           `docs/auth-notes.md` §7 for the full trace and what to try on a real machine.
+        4. **"No token/key/secret in any log or error message"** is true by construction (grep-
+           confirmed zero `println`/`Log.`/`NSLog` calls anywhere in the new `auth/` code; every
+           error is a closed `AccountErrorReason` enum, never a raw exception message) but was never
+           watched happening against a real failure on a real device.
+    - Notes / follow-ups: (1) run the Apple Developer Portal + Supabase steps in `docs/
+      auth-notes.md` §2, set `TEAM_ID` in `iosApp/Configuration/Config.xcconfig`, then build/test on
+      a real device or a non-beta Xcode before trusting the iOS auth flows blindly. (2) Google
+      Play's account-deletion policy also wants a web URL in Play Console's data-safety form
+      (separate from this step's in-app deletion, which is done) — belongs to step 15 (store
+      readiness), added there rather than silently dropped. (3) step 13A ("feature:spotify") needs
+      updating to `needs: 7B, 1, 13B` (for `SpotifyConnection`) — see that entry below.
+    - **Post-"done" correction (2026-11-07)**: the user reported, after the above, that selecting a
+      theme or a language had no effect at all — two real bugs this entry's own unmet-item #1 had
+      understated as merely "unwatched on a real screen," not "doesn't work."
+        1. **Theme**: `ThemeModeOption` (`:feature:settings`, `SYSTEM`/`LIGHT`/`DARK`) and
+           `IloveViThemeMode` (`:core:design`, `System`/`Light`/`Dark`) round-trip through the
+           stored preference as a plain string — `App.kt`'s `String.toIloveViThemeModeOrNull()`
+           compared it case-sensitively, so the stored `"DARK"` never matched `"Dark"` and the app
+           silently always fell back to `System` regardless of selection. Fixed by comparing
+           case-insensitively in both `App.kt` and `SettingsViewModel.kt`'s own (self-consistent, so
+           latently fine, but inconsistent or style) string/enum mapping.
+        2. **Language**: `IloveViLocalizedContent` (`core/design/.../Locale.kt`) never actually
+           compiled — it called `org.jetbrains.compose.resources`' `ComposeEnvironment`/
+           `LocalComposeEnvironment`/`ResourceEnvironment`, all `internal` to that library
+           (confirmed by decompiling the real 1.12.0 jar/sources, this repo's standing convention),
+           so this feature shipped broken, not merely unverified. Replaced with
+           `ApplyLanguagePreference`
+           (same `expect`/`actual` shape as `ApplySystemBarsAppearance`), after tracing — again from
+           the real sources, not memory — that `stringResource(...)` actually resolves through
+           `rememberResourceEnvironment()` reading `androidx.compose.ui.text.intl.Locale.current`, a
+           public Compose UI API, **not** the platform `getSystemEnvironment()` a first attempt
+           assumed. A *second* real bug, caught by actually testing this fix rather than trusting
+           the first build-green result: on Android, `AppCompatDelegate.setApplicationLocales(...)`
+           alone did nothing — decompiling the real (not JetBrains' empty-stub redirect)
+           `androidx.compose.ui:ui-text-android` 1.12.0 sources shows `Locale.current` reads
+           `android.os.LocaleList.getDefault()` directly, and `AppCompatDelegate`'s own live-apply
+           path pre-API-33 only hooks `Activity.attachBaseContext` for an `AppCompatActivity` — this
+           app's
+           `MainActivity` is a plain `ComponentActivity`, so that hook never ran. Fixed by also
+           calling
+           `android.os.LocaleList.setDefault(...)` directly (genuine public SDK API, confirmed
+           against the real `android.jar`) before the `Activity.recreate()` — that's the value every
+           API level this app supports (`minSdk` 24) actually reads; `setApplicationLocales()` is
+           kept too, since it's still what tells the OS's own "App languages" settings screen (API
+           33+) which language is active. iOS: no public same-process override exists (a real,
+           currently-unresolved Compose Multiplatform limitation — JetBrains YouTrack CMP-8376 /
+           `jetbrains/compose-multiplatform` #4197 — not a gap in this app's code); writing
+           `AppleLanguages` to `NSUserDefaults` is the standard best-effort fallback, taking effect
+           on the *next* cold launch only. JVM: `java.util.Locale.setDefault(...)`.
+        3. **Re-verified, not assumed**: `:core:design:compileKotlinJvm`/`compileAndroidMain`/
+           `compileKotlinIosSimulatorArm64`, `:shared:compileAndroidMain`/
+           `compileKotlinIosSimulatorArm64`, `:androidApp:assembleDebug`,
+           `:shared:testAndroidHostTest`, `:feature:settings:jvmTest`, `:core:design:jvmTest`,
+           `:webApp:build` all clean. Still unverified here: actually watching either switch on a
+           real screen (same no-real-device limitation as unmet item 1 above) — and on iOS
+           specifically, that a language change truly needs the user to relaunch the app is expected
+           behavior now, not a bug to chase further without a different resource-loading
+           architecture (a bigger change, not attempted here without being asked).
+        4. **Google sign-in button, unconfigured**: the user hit
+           `GOOGLE_WEB_CLIENT_ID is not set — add it to the environment or the root local.properties.`
+           tapping "Continue with Google" on a machine whose `local.properties` only had
+           `SUPABASE_URL`/`SUPABASE_ANON_KEY` — the intended fail-loud behavior, but surfaced in a
+           confusing way: the button always rendered regardless of whether the key existed
+           (`availableProviders` only checked platform, not config), so it always failed the instant
+           it was tapped. Added `GoogleAuthConfig.isConfigured()` (`:core:network` — the only way to
+           check without the `require()`-throwing `fromBuildConfig()`, since `GOOGLE_WEB_CLIENT_ID`
+           is `internal` to that module) and gated `availableProviders` on it — Google now simply
+           doesn't appear until the key is actually set, same as how Apple is already iOS-only. Also
+           fixed, while in this file: a stray `Result.success(Unit)1` typo in
+           `AccountServiceImpl.kt`
+           (a syntax error that would have failed every build) found alongside this. Re-verified:
+           `:core:network:compileKotlinJvm`/`compileKotlinIosSimulatorArm64`,
+           `:core:data:compileKotlinJvm`/`compileKotlinIosSimulatorArm64`/`jvmTest`,
+           `:feature:settings:jvmTest`, `:androidApp:assembleDebug`, `:shared:testAndroidHostTest`
+           all clean.
+        5. **New: `ACCOUNT_LOGIN_ENABLED` flag (2026-11-08)**, at the user's request, to actually
+           try the Google/Apple sign-in flows — the whole Account section (and Danger zone, which
+           depends on it) now only renders when this `local.properties`/environment key is `true`
+           (`AccountFeatureConfig.isLoginEnabled()` in `:core:network`, `FeatureFlags.accountLogin`
+           in `:core:data`, checked by `:feature:settings`'s `SettingsScreenContent` — same shape as
+           `FeatureFlags.spotify`, build-config-driven instead of hardcoded). Unset/blank stays off,
+           matching this section's pre-flag behavior, so no existing setup breaks. Re-verified: full
+           sweep (`:core:network`/`:core:data`/`:feature:settings` compile + `jvmTest`,
+           `:core:data`/`:feature:settings` `compileKotlinIosSimulatorArm64`,
+           `:androidApp:assembleDebug`, `:shared:testAndroidHostTest`, `:webApp:build`) all clean.
+        6. **`generateNetworkBuildConfig` never tracked its real inputs — a pre-existing bug, not
+           new to this flag**: the user commented `ACCOUNT_LOGIN_ENABLED` back out in
+           `local.properties` and the Account section stayed visible. Cause: the task declared
+           `outputs.dir(outputDir)` but no inputs at all, so Gradle's up-to-date check had nothing
+           to compare and reported `UP-TO-DATE` from the *previous* run's output forever, never
+           re-reading `local.properties` — confirmed directly by running
+           `:core:network:generateNetworkBuildConfig` and inspecting the generated
+           `NetworkBuildConfig.kt`, which still said `ACCOUNT_LOGIN_ENABLED: Boolean = true` after
+           the comment-out. This affected all five generated values, including `SUPABASE_URL`, not
+           just the new flag — any `local.properties` edit without also touching
+           `core/network/build.gradle.kts` would have been silently ignored by every build since
+           this task was first written (step 13B's `GOOGLE_WEB_CLIENT_ID` addition, or earlier for
+           `SUPABASE_URL`/`SUPABASE_ANON_KEY`). Fixed with `inputs.property(...)` for all five
+           values. Re-verified by running the task twice: reruns (not `UP-TO-DATE`) when a value
+           actually changes, correctly `UP-TO-DATE` when nothing did; full sweep
+           (`:androidApp:assembleDebug`, `:shared:testAndroidHostTest`, `:core:data:jvmTest`,
+           `:feature:settings:jvmTest`) clean after.
 
 - [ ] **14 - quality pass** (states, accessibility, localization, performance, privacy)
   (cross-cutting) - needs: 8, 9, 10, 11, 12C, 13A, 13B - done:
     - Not started (depends on the feature modules above existing first).
 
 - [ ] **15 - store readiness** (androidApp / iosApp) - needs: 14 - done:
-    - Not started.
+    - Not started. **Carried over from step 13B**: Google Play's account-deletion policy wants a web
+      URL (Play Console's data-safety form) where deletion can be requested without installing the
+      app, separate from 13B's in-app deletion flow (already done) — needs a reachable static page
+      describing the request-deletion process. Also carried over: `iosApp/Configuration/
+    Config.xcconfig`'s `TEAM_ID` is still blank (see `docs/auth-notes.md` §2), needed for real code
+      signing, not just Apple sign-in specifically.
 
 - [ ] **16 - content entry after the game release** (backend / content) - needs: 3, 12A - done:
     - Not started. Blocked until GTA VI ships (19 Nov 2026) — real content can't be entered before

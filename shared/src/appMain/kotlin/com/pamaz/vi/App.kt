@@ -2,14 +2,22 @@ package com.pamaz.vi
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pamaz.vi.core.data.repository.SettingsRepository
 import com.pamaz.vi.core.data.seed.SeedImporter
 import com.pamaz.vi.core.data.sync.ContentSyncer
+import com.pamaz.vi.design.ApplyLanguagePreference
 import com.pamaz.vi.design.IloveViTheme
+import com.pamaz.vi.design.IloveViThemeMode
 import com.pamaz.vi.di.allAppKoinModules
 import com.pamaz.vi.di.rememberPlatformContextModule
 import com.pamaz.vi.navigation.AppNavHost
 import com.pamaz.vi.navigation.appFeatureRegistrations
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.koin.compose.koinInject
 import org.koin.core.context.startKoin
 import org.koin.core.error.KoinApplicationAlreadyStartedException
@@ -34,6 +42,17 @@ import org.koin.core.error.KoinApplicationAlreadyStartedException
  * not. Seed import runs first (`await`ed, since it's the one-time "app is never empty offline"
  * guarantee this app's very first screen depends on) and only then does the real sync start, so a
  * slow/failed network sync can never delay the bundled seed rows from being there immediately.
+ *
+ * **Step 13B**: [IloveViTheme]'s `themeMode` and [ApplyLanguagePreference]'s `languageCode` both
+ * come from [SettingsRepository] instead of defaulting silently — [initialPreferences] is read
+ * with a blocking [runBlocking] call on first composition (fast: one row, local SQLite, same
+ * database [SeedImporter]/[ContentSyncer] already open) so the very first frame already renders in
+ * the right theme/language, never a flash of the wrong one followed by a jump; every composition
+ * after that reads the same [SettingsRepository.preferences] [Flow] reactively via
+ * [collectAsStateWithLifecycle]. Theme changes apply immediately on every platform. Language
+ * changes apply immediately on Android (a quick [android.app.Activity.recreate]) but need the next
+ * cold launch on iOS — a real Compose Multiplatform/iOS platform limitation, not a bug here; see
+ * [ApplyLanguagePreference]'s own KDoc.
  */
 @Composable
 actual fun App() {
@@ -53,9 +72,28 @@ actual fun App() {
         contentSyncer.start(appScope)
     }
 
-    IloveViTheme {
+    val settingsRepository = koinInject<SettingsRepository>()
+    val initialPreferences = remember { runBlocking { settingsRepository.preferences().first() } }
+    val preferences by settingsRepository.preferences()
+        .collectAsStateWithLifecycle(initialValue = initialPreferences)
+    val themeMode = preferences?.themeMode?.toIloveViThemeModeOrNull() ?: IloveViThemeMode.System
+    val languageCode = preferences?.language?.takeIf { it.isNotBlank() } ?: "en"
+
+    ApplyLanguagePreference(languageCode)
+    IloveViTheme(themeMode = themeMode) {
         AppNavHost { navController, selectedMapEntryId, onSelectMapEntry ->
             appFeatureRegistrations(navController, selectedMapEntryId, onSelectMapEntry)
         }
     }
 }
+
+/**
+ * Case-insensitive on purpose: the stored value comes from `:feature:settings`'s own
+ * `ThemeModeOption` enum (`SYSTEM`/`LIGHT`/`DARK`, all caps), not this one
+ * (`System`/`Light`/`Dark`, mixed case) — a real bug once compared case-sensitively (the
+ * stored "DARK" never matched "Dark", so the app silently always fell back to [IloveViThemeMode.System]
+ * regardless of what was actually selected). Comparing case-insensitively here makes the match
+ * correct regardless of either enum's declared casing, present or future.
+ */
+private fun String.toIloveViThemeModeOrNull(): IloveViThemeMode? =
+    IloveViThemeMode.entries.firstOrNull { it.name.equals(this, ignoreCase = true) }

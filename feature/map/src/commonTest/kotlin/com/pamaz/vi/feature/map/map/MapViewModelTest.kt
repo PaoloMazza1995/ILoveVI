@@ -260,7 +260,8 @@ class MapViewModelTest {
                 showLabels = false,
                 language = "en",
                 selectedNewsTopic = null,
-                lastContentUpdate = null
+                lastContentUpdate = null,
+                themeMode = "SYSTEM",
             )
         )
         val viewModel = viewModel(mapRepository = repository, settingsRepository = settings)

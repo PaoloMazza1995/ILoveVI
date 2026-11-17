@@ -4,7 +4,6 @@
     <string name="app_tab_catalog_title">Catalogo</string>
     <string name="app_tab_music_title">Musica</string>
     <string name="app_tab_news_title">News</string>
-    <string name="app_tab_settings_title">Impostazioni</string>
 
     <string name="app_map_filters_title">Filtri mappa</string>
     <string name="app_detail_title">Dettaglio</string>

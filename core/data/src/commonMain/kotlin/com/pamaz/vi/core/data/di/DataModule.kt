@@ -1,7 +1,11 @@
 package com.pamaz.vi.core.data.di
 
+import com.pamaz.vi.core.data.auth.AppleIdTokenRequester
+import com.pamaz.vi.core.data.auth.GoogleIdTokenRequester
 import com.pamaz.vi.core.data.connectivity.ConnectivityMonitor
 import com.pamaz.vi.core.data.connectivity.PlatformConnectivityMonitor
+import com.pamaz.vi.core.data.repository.AccountService
+import com.pamaz.vi.core.data.repository.AccountServiceImpl
 import com.pamaz.vi.core.data.repository.CatalogRepository
 import com.pamaz.vi.core.data.repository.CatalogRepositoryImpl
 import com.pamaz.vi.core.data.repository.MapRepository
@@ -14,8 +18,11 @@ import com.pamaz.vi.core.data.repository.SettingsRepository
 import com.pamaz.vi.core.data.repository.SettingsRepositoryImpl
 import com.pamaz.vi.core.data.seed.SeedImporter
 import com.pamaz.vi.core.data.seed.SeedImporterImpl
+import com.pamaz.vi.core.data.spotify.FakeSpotifyConnection
+import com.pamaz.vi.core.data.spotify.SpotifyConnection
 import com.pamaz.vi.core.data.sync.ContentSyncer
 import com.pamaz.vi.core.data.sync.ContentSyncerImpl
+import io.github.jan.supabase.SupabaseClient
 import org.koin.dsl.module
 
 /**
@@ -30,6 +37,12 @@ val dataModule = module {
     single<MapRepository> { MapRepositoryImpl(get()) }
     single<SettingsRepository> { SettingsRepositoryImpl(get()) }
     single<NewsRepository> { NewsRepositoryImpl(get()) }
+    // Real SpotifyConnection ships with step 13A — swaps this single, nothing else.
+    single<SpotifyConnection> { FakeSpotifyConnection() }
+
+    single { GoogleIdTokenRequester(get()) }
+    single { AppleIdTokenRequester(get()) }
+    single<AccountService> { AccountServiceImpl(get<SupabaseClient>(), get(), get()) }
 
     single<ConnectivityMonitor> { PlatformConnectivityMonitor(get()) }
 

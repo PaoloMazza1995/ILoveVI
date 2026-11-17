@@ -42,12 +42,13 @@ fun IloveViEmptyStateCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit = {},
 ) {
+    val borderColor = IloveViColors.border
     Column(
         modifier = modifier
             .fillMaxWidth()
             .drawBehind {
                 drawRoundRect(
-                    color = IloveViColors.border,
+                    color = borderColor,
                     cornerRadius = CornerRadius(16.dp.toPx(), 16.dp.toPx()),
                     size = Size(size.width, size.height),
                     style = Stroke(

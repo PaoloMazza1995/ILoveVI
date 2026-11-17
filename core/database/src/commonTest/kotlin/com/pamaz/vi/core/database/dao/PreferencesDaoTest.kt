@@ -21,7 +21,8 @@ class PreferencesDaoTest {
             showLabels = false,
             language = "it",
             selectedNewsTopic = "NEWS",
-            lastContentUpdate = null
+            lastContentUpdate = null,
+            themeMode = "DARK",
         )
 
         dao.set(preferences)

@@ -35,6 +35,10 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.compose.uiTooling)
+            // WindowCompat.getInsetsController, for ApplySystemBarsAppearance (step 13B theming).
+            implementation(libs.androidx.core.ktx)
+            // AppCompatDelegate.setApplicationLocales, for ApplyLanguagePreference (step 13B theming).
+            implementation(libs.androidx.appcompat)
         }
 
         iosMain.dependencies {

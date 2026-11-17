@@ -21,6 +21,7 @@ internal class SettingsRepositoryImpl(private val preferencesDao: PreferencesDao
                     language = it.language,
                     selectedNewsTopic = it.selectedNewsTopic,
                     lastContentUpdate = it.lastContentUpdate,
+                    themeMode = it.themeMode,
                 )
             }
         }
@@ -31,6 +32,7 @@ internal class SettingsRepositoryImpl(private val preferencesDao: PreferencesDao
             language = preferences.language,
             selectedNewsTopic = preferences.selectedNewsTopic,
             lastContentUpdate = preferences.lastContentUpdate,
+            themeMode = preferences.themeMode,
         ),
     )
 }

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_title">SETTINGS</string>
+
+    <string name="settings_section_account">Account</string>
+    <string name="settings_account_signed_out_message">The app works fully without an account.</string>
+    <string name="settings_account_continue_with_google">Continue with Google</string>
+    <string name="settings_account_continue_with_apple">Continue with Apple</string>
+    <string name="settings_account_signing_in">Signing in…</string>
+    <string name="settings_account_sign_out">Sign out</string>
+    <string name="settings_account_retry">Retry</string>
+    <string name="settings_account_error_cancelled">Sign-in was cancelled.</string>
+    <string name="settings_account_error_no_account">No Google account found on this device.</string>
+    <string name="settings_account_error_developer_error">Google sign-in isn\'t configured correctly for this app build.</string>
+    <string name="settings_account_error_not_allowed">This account isn\'t allowed to sign in yet.</string>
+    <string name="settings_account_error_redirect_mismatch">Sign-in redirect isn\'t configured correctly.</string>
+    <string name="settings_account_error_provider_disabled">Sign-in isn\'t available right now.</string>
+    <string name="settings_account_error_offline">No connection. Try again.</string>
+    <string name="settings_account_error_unknown">Something went wrong. Try again.</string>
+
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_appearance_theme">Theme</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_appearance_language">Language</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_language_italian">Italiano</string>
+
+    <string name="settings_section_map">Map</string>
+    <string name="settings_map_show_labels">Show labels</string>
+    <string name="settings_map_show_labels_subtitle">Names of weapons and vehicles on the pins</string>
+    <string name="settings_map_data_update">Data update</string>
+    <string name="settings_map_data_update_never">Never</string>
+    <string name="settings_map_data_update_just_now">Just now</string>
+    <string name="settings_map_data_update_minutes_ago">%1$dm ago</string>
+    <string name="settings_map_data_update_hours_ago">%1$dh ago</string>
+    <string name="settings_map_data_update_days_ago">%1$dd ago</string>
+    <string name="settings_map_refresh_content_description">Refresh</string>
+    <string name="settings_map_data_update_error">Update failed. Try again.</string>
+
+    <string name="settings_section_spotify">Spotify</string>
+    <string name="settings_spotify_disconnected_subtitle">Connect your account to create the playlist with the game\'s songs.</string>
+    <string name="settings_spotify_connect">Connect Spotify</string>
+    <string name="settings_spotify_connected">Connected as %1$s</string>
+    <string name="settings_spotify_disconnect">Disconnect</string>
+
+    <string name="settings_section_about">About</string>
+    <string name="settings_about_disclaimer">Unofficial app, not affiliated with Rockstar Games or Take-Two Interactive.</string>
+    <string name="settings_about_licenses">Licenses and credits</string>
+    <string name="settings_about_licenses_body">Anton and Barlow fonts (SIL Open Font License). Built with open-source libraries.</string>
+    <string name="settings_about_version">Version %1$s</string>
+
+    <string name="settings_section_danger_zone">Danger zone</string>
+    <string name="settings_danger_delete_account">Delete account</string>
+    <string name="settings_delete_account_dialog_title">Delete account?</string>
+    <string name="settings_delete_account_dialog_message">This permanently deletes your account. This can\'t be undone.</string>
+    <string name="settings_delete_account_dialog_confirm">Delete</string>
+    <string name="settings_delete_account_dialog_cancel">Cancel</string>
+    <string name="settings_delete_account_deleting">Deleting…</string>
+</resources>

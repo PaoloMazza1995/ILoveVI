@@ -5,17 +5,23 @@ CREATE TABLE preferencesEntity (
     showLabels INTEGER NOT NULL,
     language TEXT NOT NULL,
     selectedNewsTopic TEXT,
-    lastContentUpdate INTEGER
+    lastContentUpdate INTEGER,
+    -- DEFAULT 'SYSTEM' matches 3.sqm's `ALTER TABLE ... ADD COLUMN themeMode ... DEFAULT 'SYSTEM'`
+    -- exactly — an ADD COLUMN's default can't be dropped without recreating the table, so a fresh
+    -- install's CREATE TABLE must carry the same default for
+    -- `verifyCommonMainIloveViDatabaseMigration` to agree the two schemas match.
+    themeMode TEXT NOT NULL DEFAULT 'SYSTEM'
 );
 
 select:
 SELECT * FROM preferencesEntity WHERE id = 0;
 
 upsert:
-INSERT INTO preferencesEntity(id, showLabels, language, selectedNewsTopic, lastContentUpdate)
-VALUES (0, :showLabels, :language, :selectedNewsTopic, :lastContentUpdate)
+INSERT INTO preferencesEntity(id, showLabels, language, selectedNewsTopic, lastContentUpdate, themeMode)
+VALUES (0, :showLabels, :language, :selectedNewsTopic, :lastContentUpdate, :themeMode)
 ON CONFLICT(id) DO UPDATE SET
     showLabels = excluded.showLabels,
     language = excluded.language,
     selectedNewsTopic = excluded.selectedNewsTopic,
-    lastContentUpdate = excluded.lastContentUpdate;
+    lastContentUpdate = excluded.lastContentUpdate,
+    themeMode = excluded.themeMode;
