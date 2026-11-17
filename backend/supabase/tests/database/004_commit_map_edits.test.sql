@@ -62,13 +62,16 @@ reset role;
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 
-select throws_like(
+-- EXECUTE is revoked from anon (20261117130001) for defense in depth, so the anonymous call now
+-- fails at the grant check (SQLSTATE 42501, insufficient_privilege) before the function body's own
+-- is_admin() check ever runs — it no longer reaches the '%admin%'-worded exception.
+select throws_ok(
   $$ select public.commit_map_edits('{
        "map_version": 9100,
        "entries": {"weapons": [{"id":"commit-weapon-anon","name":"x","description":"y","sub_type":"PISTOL"}]},
        "pins": []
      }'::jsonb) $$,
-  '%admin%',
+  '42501',
   'anonymous commit is refused'
 );
 

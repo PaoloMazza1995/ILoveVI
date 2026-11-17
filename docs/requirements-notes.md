@@ -34,3 +34,25 @@ recorded here rather than silently folded into those two IDs:
 `docs/ROADMAP.md`'s existing "Open decisions" section already tracks **Spotify access and limits**
 (step 13A) as unresolved — this step doesn't change that; it only adds the flag/interface extension
 point SET-01's eventual real implementation will need.
+
+## Music / Compilation — intentionally dropped for v1 (decided 2026-11-17)
+
+The Functional Analysis's Music requirements (MUS-01..06, mostly Must priority) and Compilation
+requirements (CMP-01..08, mostly Must priority) are **not implemented for the first release**. This
+was raised as a BLOCKER by the 2026-11-17 pre-submission audit (`docs/RELEASE-AUDIT.md`, RA-07/
+FUNC-1) because a Must-priority feature set was missing without the requirements doc saying so. This
+entry is the formal status update that closes that gap: the decision is to ship v1 without Music/
+Compilation, not to build it before submission.
+
+| ID | Requirement | Priority | Status vs. v0.4 PDF |
+|----|-------------|----------|----------------------|
+| MUS-01..05 | Song list, search, station filter, add song, compilation card | Must | **Intentionally dropped for v1.** No `feature:music` module exists (`docs/ROADMAP.md` step 10). |
+| MUS-06 | Per-song "Open in Spotify" | Could | Dropped for v1, same reason. |
+| CMP-01..07 | Compilation screen, reorder, Spotify playlist export | Must | **Intentionally dropped for v1.** |
+| CMP-08 | Rename compilation | Could | Dropped for v1, same reason. |
+
+The Music tab is already hidden from the bottom nav (`a01031f`, "Hides for first release the music
+tab") and `FeatureFlags.spotify = false`, so nothing half-built is reachable in the shipped app —
+this entry just makes the *requirements-tracking* status match what the code already does. Revisit
+MUS-*/CMP-* for a post-v1 release; `docs/ROADMAP.md`'s "Spotify access and limits" open decision
+still gates it either way.

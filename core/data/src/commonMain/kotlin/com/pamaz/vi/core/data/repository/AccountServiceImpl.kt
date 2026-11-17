@@ -45,7 +45,9 @@ internal class AccountServiceImpl(
         when (status) {
             is SessionStatus.Initializing -> AccountState.Loading
             is SessionStatus.NotAuthenticated -> AccountState.SignedOut
-            is SessionStatus.Authenticated -> AccountState.SignedIn(status.session.user!!.toAccountUser())
+            is SessionStatus.Authenticated -> status.session.user?.toAccountUser()
+                ?.let { AccountState.SignedIn(it) }
+                ?: AccountState.Error(AccountErrorReason.UNKNOWN)
             is SessionStatus.RefreshFailure -> AccountState.Error(status.cause.toReason())
         }
     }

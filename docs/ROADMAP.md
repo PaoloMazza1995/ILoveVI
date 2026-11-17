@@ -892,7 +892,10 @@ the per-sub-type icon set once, early, than to rework pin rendering and seed dat
       any future Compose UI test in this repo the same way.
 
 - [ ] **10 - feature:music** (feature/music) - needs: 7B, 1 - done:
-    - Not started. No `feature:music` module exists.
+    - **Intentionally dropped for the v1 / first release** (decision made 2026-11-17, alongside the
+      pre-submission audit — see `docs/RELEASE-AUDIT.md` RA-07 and `docs/requirements-notes.md`'s
+      Music/Compilation section for the formal requirement-status delta). No `feature:music` module
+      exists; the Music tab is already hidden from the nav bar (`a01031f`). Revisit post-v1.
 
 - [!] **11 - feature:map** (feature/map) - needs: 5A, 5A-bis, 7B, 1 - done: 2026-10-31
     - New KMP library module (`kmm-library-plugin` + Compose), following `:feature:catalog`'s
@@ -1602,6 +1605,18 @@ the per-sub-type icon set once, early, than to rework pin rendering and seed dat
 - [ ] **16 - content entry after the game release** (backend / content) - needs: 3, 12A - done:
     - Not started. Blocked until GTA VI ships (19 Nov 2026) — real content can't be entered before
       then; see "Content after release" below.
+
+- [ ] **17 - Pre-submission audit** (release readiness) - needs: 14, 15, 16 - done:
+    - Done 2026-11-17 (read-only audit, see `docs/RELEASE-AUDIT.md`). **Verdict: NOT READY TO
+      SUBMIT** — 11 BLOCKER findings, most importantly: the dev-mode map image
+      (`core/mapview/.../map_dev.png`) is an unlicensed fan-made "Map of Leonida" that ships by
+      default because the `-Pilovevi.release=true` gate (step 15) is never passed by any build
+      invocation; the app icon visually imitates GTA VI's own neon-sunset/palm branding; Android
+      release builds are unsigned and iOS archives can't be signed (`TEAM_ID` still blank, carried
+      over from step 15); `seed.sql`'s placeholder content is still what would ship (step 16 not
+      started); Music/Compilation (Must-priority) is unimplemented and undocumented as dropped; and
+      sign-in/delete-account are fully built but switched off in the current config. Not re-checking
+      this box until a follow-up audit finds zero BLOCKERs.
 
 ---
 
